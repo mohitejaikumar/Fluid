@@ -1,5 +1,5 @@
 use anchor_lang::prelude::{instruction::Instruction, program::invoke_signed, *};
-use anchor_spl::{associated_token::{Create, create_idempotent}, token_interface::{TokenAccount, TokenInterface}};
+use anchor_spl::{associated_token::{Create, create_idempotent}, token_interface::{Mint, TokenAccount, TokenInterface}};
 
 use crate::{errors::AggregatorError, states::{AggregatorConfig, ReserveWithdrawAccounts}};
 
@@ -66,6 +66,7 @@ impl<'info> KaminoVault<'info> {
         config: &Account<'info, AggregatorConfig>,
         remaining_accounts: &'info [AccountInfo<'info>],
         vault_usdc: &InterfaceAccount<'info, TokenAccount>,
+        usdc_mint: &InterfaceAccount<'info, Mint>,
         token_program: &Interface<'info, TokenInterface>,
         associated_token_program: &AccountInfo<'info>,
         system_program: &AccountInfo<'info>,
@@ -73,6 +74,11 @@ impl<'info> KaminoVault<'info> {
     ) -> Box<KaminoVault<'info>> {
 
         let mut account_iter = remaining_accounts.iter();
+        
+        // Skip first 13 accounts (JupLend accounts)
+        for _ in 0..13 {
+            account_iter.next();
+        }
 
         // Vault accounts
         let kamino_vault_state = account_iter.next().unwrap();
@@ -131,7 +137,7 @@ impl<'info> KaminoVault<'info> {
             config: config.to_account_info(),
             vault_state: kamino_vault_state.to_account_info(),
             token_vault: kamino_token_vault.to_account_info(),
-            token_mint: kamino_shares_mint.to_account_info(),
+            token_mint: usdc_mint.to_account_info(),
             base_vault_authority: kamino_base_vault_authority.to_account_info(),
             shares_mint: kamino_shares_mint.to_account_info(),
             user_token_ata: vault_usdc.to_account_info(),
@@ -172,6 +178,8 @@ impl<'info> KaminoVault<'info> {
         user_ata: &AccountInfo<'info>,
         authority: &AccountInfo<'info>,
     ) -> Result<()> {
+
+        msg!("Creating shares ATA");
 
         create_idempotent(
             CpiContext::new(
@@ -217,7 +225,7 @@ impl<'info> KaminoVault<'info> {
             account_metas.push(AccountMeta::new(*self.reserve_accounts[i].reserve.key, false));
         }
         for i in 0..num_reserves {
-            account_metas.push(AccountMeta::new_readonly(*self.reserve_accounts[i].reserve.key, false));
+            account_metas.push(AccountMeta::new_readonly(*self.reserve_accounts[i].lending_market.key, false));
         }
 
         let instruction = Instruction {
@@ -266,8 +274,8 @@ impl<'info> KaminoVault<'info> {
         let account_metas = vec![
             AccountMeta::new(*self.config.key, true),        
             AccountMeta::new(*self.config.key, true),                 
-            AccountMeta::new(*self.config.key, true),       
-            AccountMeta::new(*self.config.key, true),       
+            AccountMeta::new_readonly(*self.config.key, false),       
+            AccountMeta::new_readonly(*self.config.key, false),       
             AccountMeta::new(*self.user_farm_state.key, false),     
             AccountMeta::new(*self.farm_state.key, false),          
             AccountMeta::new_readonly(*self.system_program.key, false),
@@ -368,7 +376,7 @@ impl<'info> KaminoVault<'info> {
     }
 
     
-    pub fn execute_complete_deposit(&mut self, amount: u64, config_bump: u8) -> Result<()> {
+    pub fn execute_complete_deposit(&self, amount: u64, config_bump: u8) -> Result<()> {
         // Step 1: Create shares ATA if needed
         self.create_shares_ata(
             &self.shares_mint.to_account_info(),

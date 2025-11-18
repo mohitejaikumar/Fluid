@@ -25,16 +25,17 @@ pub struct Deposit<'info> {
     pub user_usdc: InterfaceAccount<'info, TokenAccount>,
 
     #[account(
-        mut,
-        constraint = user_cusdc.mint == config.cusdc_mint,
-        constraint = user_cusdc.owner == user.key()
+        init_if_needed,
+        payer = user,
+        associated_token::mint = cusdc_mint,
+        associated_token::authority = user
     )]
     pub user_cusdc: InterfaceAccount<'info, TokenAccount>,
 
     #[account(
         mut,
-        seeds = [b"vault-usdc"],
-        bump
+        associated_token::mint = config.usdc_mint,
+        associated_token::authority = config,
     )]
     pub vault_usdc: InterfaceAccount<'info, TokenAccount>,
 
@@ -65,7 +66,7 @@ impl<'info> Deposit<'info> {
         // Log remaining accounts for debugging
         msg!("Received {} remaining accounts", remaining_accounts.len());
         
-
+        msg!("Transferring USDC to vault");
         let _ = transfer_checked(
             CpiContext::new(
                 self.token_program.to_account_info(),
@@ -79,6 +80,11 @@ impl<'info> Deposit<'info> {
             amount, 
             self.usdc_mint.decimals
         );
+
+        msg!("Transferred USDC to vault");
+        
+        // Reload vault_usdc account to get updated balance after transfer
+        self.vault_usdc.reload()?;
         
         // Get total USDC in JupLend and Kamino combined
         let usdc_in_all_protocol = calculate_total_asset_balance(remaining_accounts)?;
@@ -96,6 +102,8 @@ impl<'info> Deposit<'info> {
         let seeds = &[b"config".as_ref(), &[self.config.bump]];
         let signer = &[&seeds[..]];
 
+        msg!("Minting CUSDC");
+
         mint_to(
             CpiContext::new_with_signer(
                self.token_program.to_account_info(),
@@ -108,14 +116,14 @@ impl<'info> Deposit<'info> {
             ),
             cusdc_to_mint,
         )?;
-
+        msg!("Minted CUSDC");
 
         self.config.total_deposits = self.config
             .total_deposits
             .checked_add(amount)
             .ok_or(AggregatorError::MathOverflow)?;
 
-
+        msg!("Rebalancing allocation");
         // Rebalance to all protocols 
         rebalance_allocation(
             &self.user,
@@ -123,12 +131,13 @@ impl<'info> Deposit<'info> {
             usdc_in_all_protocol,
             &self.config,
             &self.vault_usdc,
+            &self.usdc_mint,
             &self.token_program,
             &self.associated_token_program,
             &self.system_program,
             &self.rent.to_account_info()
         )?;
-        
+        msg!("Rebalanced allocation");
 
         emit!(DepositEvent {
             user: self.user.key(),

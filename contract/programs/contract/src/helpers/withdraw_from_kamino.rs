@@ -207,7 +207,6 @@ impl<'info> KaminoVault<'info> {
             reserve.reserve_liquidity_supply.clone(),
             reserve.reserve_collateral_mint.clone(),
             reserve.reserve_collateral_token_program.clone(),
-            self.instruction_sysvar.clone(),
             self.event_authority.clone(), 
             self.kamino_lending_vault_program.clone(),
             self.reserve_accounts[0].reserve.clone(),

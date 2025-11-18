@@ -31,20 +31,26 @@ use crate::{ helpers::{get_juplend_balance, get_kamino_balance}, states::{Reserv
     // pub token_vault: AccountInfo<'info>,
     // pub base_vault_authority: AccountInfo<'info>,
     // pub shares_mint: AccountInfo<'info>,
+
     // pub user_shares_ata: AccountInfo<'info>,
     // pub klend_program: AccountInfo<'info>,
     // pub shares_token_program: AccountInfo<'info>,
     // pub event_authority: AccountInfo<'info>,
+
     // pub kamino_lending_vault_program: AccountInfo<'info>,
     // pub user_state: AccountInfo<'info>,
     // pub farm_state: AccountInfo<'info>,
     // pub farm_vault: AccountInfo<'info>,
+
     // pub scope_prices: AccountInfo<'info>,
     // pub farm_program: AccountInfo<'info>,
     // pub kamino_vault_program: AccountInfo<'info>,
+
     // pub farm_vault_authority: AccountInfo<'info>,
+
     // pub reserve_account_1: AccountInfo<'info>,
     // pub reserve_account_2: AccountInfo<'info>,
+
     // pub lending_market_1: AccountInfo<'info>,
     // pub lending_market_2: AccountInfo<'info>,
     
@@ -59,10 +65,14 @@ pub fn calculate_total_asset_balance<'info>(
 
     let mut account_iter = remaining_accounts.iter();
     
-    let jup_lending = Account::<'info, Lending>::try_from(account_iter.next().unwrap())?;
-    let jup_lending_rewards_rate_model = Account::<'info, LendingRewardsRateModel>::try_from(account_iter.next().unwrap())?;
+    // Deserialize JupLend accounts without ownership checks (they're owned by JupLend program, not our program)
+    let jup_lending_acc = account_iter.next().unwrap();
+    let jup_lending = Lending::try_deserialize(&mut &jup_lending_acc.try_borrow_data()?[..])?;
+    
+    let jup_rewards_acc = account_iter.next().unwrap();
+    let jup_lending_rewards_rate_model = LendingRewardsRateModel::try_deserialize(&mut &jup_rewards_acc.try_borrow_data()?[..])?;
+    
     let _jup_f_token_mint = InterfaceAccount::<'info, Mint>::try_from(account_iter.next().unwrap())?;
-
     let jup_vault_ftokens = InterfaceAccount::<'info, TokenAccount>::try_from(account_iter.next().unwrap())?;
     let _jup_lending_admin = account_iter.next().unwrap();
     let jup_supply_token_reserves_liquidity = account_iter.next().unwrap();
@@ -73,7 +83,6 @@ pub fn calculate_total_asset_balance<'info>(
     let _jup_liquidity_program = account_iter.next().unwrap();
     let _jup_claim_account = account_iter.next().unwrap();
     let _jup_lending_program = account_iter.next().unwrap();
-
     let kamino_vault_state = account_iter.next().unwrap();
     let _kamino_token_vault = account_iter.next().unwrap();
     let _kamino_base_vault_authority = account_iter.next().unwrap();
@@ -87,11 +96,11 @@ pub fn calculate_total_asset_balance<'info>(
     let _kamino_farm_state = account_iter.next().unwrap();
     let _kamino_farm_vault = account_iter.next().unwrap();
     let _kamino_scope_prices = account_iter.next().unwrap();
-
     let _kamino_farm_program = account_iter.next().unwrap();
     let _kamino_vault_program = account_iter.next().unwrap();
-
     let _kamino_farm_vault_authority = account_iter.next().unwrap();
+
+    let _instruction_sysvar = account_iter.next().unwrap();
 
     // Reserve 1 (7 accounts)
     let reserve_1 = ReserveWithdrawAccounts {
@@ -104,7 +113,6 @@ pub fn calculate_total_asset_balance<'info>(
         reserve_collateral_token_program: account_iter.next().unwrap().to_account_info(),
     };
     
-    
     // Reserve 2 (7 accounts)
     let reserve_2 = ReserveWithdrawAccounts {
         reserve: account_iter.next().unwrap().to_account_info(),
@@ -115,7 +123,8 @@ pub fn calculate_total_asset_balance<'info>(
         reserve_collateral_mint: account_iter.next().unwrap().to_account_info(),
         reserve_collateral_token_program: account_iter.next().unwrap().to_account_info(),
     };
-    
+
+    msg!("Calculating Juplend balance");
 
     let juplend_balance = get_juplend_balance(
         jup_supply_token_reserves_liquidity,
@@ -124,7 +133,11 @@ pub fn calculate_total_asset_balance<'info>(
         &jup_vault_ftokens,
     )?;
 
+    msg!("Calculated Juplend balance: {}", juplend_balance);
+
     let current_slot = Clock::get()?.slot;
+
+    msg!("Calculating Kamino balance");
 
     let kamino_balance = get_kamino_balance(
         kamino_vault_state,
@@ -132,6 +145,8 @@ pub fn calculate_total_asset_balance<'info>(
         &[reserve_1.reserve.clone(), reserve_2.reserve.clone()],
         Some(current_slot),
     )?;
+
+    msg!("Calculated Kamino balance: {}", kamino_balance);
 
     Ok(vec![
         juplend_balance,

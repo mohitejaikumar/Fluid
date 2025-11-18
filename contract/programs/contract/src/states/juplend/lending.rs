@@ -1,7 +1,7 @@
 use anchor_lang::prelude::*;
 
 
-
+#[derive(Debug)]
 #[account]
 pub struct Lending {
     pub mint: Pubkey,

@@ -49,6 +49,7 @@ impl<'info> Juplend<'info> {
         config: &Account<'info, AggregatorConfig>,
         remaining_accounts: &'info [AccountInfo<'info>],
         vault_usdc: &InterfaceAccount<'info, TokenAccount>,
+        usdc_mint: &InterfaceAccount<'info, anchor_spl::token_interface::Mint>,
         token_program: &Interface<'info, TokenInterface>,
         associated_token_program: &AccountInfo<'info>,
         system_program: &AccountInfo<'info>,
@@ -77,7 +78,7 @@ impl<'info> Juplend<'info> {
             signer,
             asset_token_account: vault_usdc.to_account_info(),
             ftoken_account: jup_vault_ftokens.to_account_info(),
-            mint: jup_f_token_mint.to_account_info(),
+            mint: usdc_mint.to_account_info(),
             lending_admin: jup_lending_admin.to_account_info(),
             lending: jup_lending.to_account_info(),
             f_token_mint: jup_f_token_mint.to_account_info(),
@@ -101,6 +102,10 @@ impl<'info> Juplend<'info> {
 
         let mut instruction_data = get_deposit_discriminator();
         instruction_data.extend_from_slice(&amount.to_le_bytes());
+
+        msg!("asset token account: {}", self.asset_token_account.key());
+        msg!("ftoken account: {}", self.ftoken_account.key());
+        msg!("mint: {}", self.mint.key());
 
         let account_metas = vec![
             // signer (mutable, signer)

@@ -1,5 +1,5 @@
 use anchor_lang::prelude::*;
-use anchor_spl::{ token_interface::{Mint, TokenAccount, TokenInterface}};
+use anchor_spl::{ associated_token::AssociatedToken, token_interface::{Mint, TokenAccount, TokenInterface}};
 
 use crate::{errors::AggregatorError, states::aggregator_config::AggregatorConfig};
 
@@ -35,16 +35,14 @@ pub struct InitAggregatorConfig<'info> {
     #[account(
         init,
         payer = authority,
-        token::mint = usdc_mint,
-        token::authority = config,
-        seeds = [b"vault-usdc"],
-        bump
+        associated_token::mint = usdc_mint,
+        associated_token::authority = config,
     )]
     pub vault_usdc: InterfaceAccount<'info, TokenAccount>,
 
     pub token_program: Interface<'info, TokenInterface>,
+    pub associated_token_program: Program<'info, AssociatedToken>,
     pub system_program: Program<'info, System>,
-    pub rent: Sysvar<'info, Rent>,
 }
 
 

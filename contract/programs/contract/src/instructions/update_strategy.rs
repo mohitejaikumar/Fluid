@@ -19,8 +19,8 @@ pub struct UpdateStrategy<'info> {
 
     #[account(
         mut,
-        seeds = [b"vault-usdc"],
-        bump
+        associated_token::mint = config.usdc_mint,
+        associated_token::authority = config,
     )]
     pub vault_usdc: InterfaceAccount<'info, TokenAccount>,
 

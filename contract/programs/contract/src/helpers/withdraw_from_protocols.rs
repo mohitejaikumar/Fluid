@@ -1,5 +1,5 @@
 use anchor_lang::prelude::*;
-use anchor_spl::token_interface::{TokenAccount, TokenInterface};
+use anchor_spl::token_interface::{Mint, TokenAccount, TokenInterface};
 
 use crate::{errors::AggregatorError, helpers::{calculate_total_asset_balance::calculate_total_asset_balance, deposit_to_juplend::Juplend, deposit_to_kamino::KaminoVault, get_kamino_balance::get_kamino_shares_amount_from_usdc}, states::{AggregatorConfig, ReserveWithdrawAccounts}};
 
@@ -13,6 +13,7 @@ pub fn withdraw_from_protocols<'c, 'info>(
     remaining_accounts: &'info [AccountInfo<'info>],
     config: Account<'info, AggregatorConfig>,
     vault_usdc: InterfaceAccount<'info, TokenAccount>,
+    usdc_mint: InterfaceAccount<'info, Mint>,
     token_program: Interface<'info, TokenInterface>,
     associated_token_program: AccountInfo<'info>,
     system_program: AccountInfo<'info>,
@@ -41,6 +42,7 @@ pub fn withdraw_from_protocols<'c, 'info>(
         &config,
         remaining_accounts,
         &vault_usdc,
+        &usdc_mint,
         &token_program,
         &associated_token_program,
         &system_program,
@@ -51,6 +53,7 @@ pub fn withdraw_from_protocols<'c, 'info>(
         &config,
         remaining_accounts,
         &vault_usdc,
+        &usdc_mint,
         &token_program,
         &associated_token_program,
         &system_program,

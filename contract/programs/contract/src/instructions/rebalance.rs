@@ -20,8 +20,8 @@ pub struct Rebalance<'info> {
 
     #[account(
         mut,
-        seeds = [b"vault-usdc"],
-        bump
+        associated_token::mint = config.usdc_mint,
+        associated_token::authority = config,
     )]
     pub vault_usdc: InterfaceAccount<'info, TokenAccount>,
 
@@ -54,6 +54,7 @@ impl<'info> Rebalance<'info> {
             usdc_in_all_protocol,
             &self.config,
             &self.vault_usdc,
+            &self.usdc_mint,
             &self.token_program,
             &self.associated_token_program,
             &self.system_program,

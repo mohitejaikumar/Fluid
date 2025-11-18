@@ -33,8 +33,8 @@ pub struct Withdraw<'info> {
 
     #[account(
         mut,
-        seeds = [b"vault-usdc"],
-        bump
+        associated_token::mint = config.usdc_mint,
+        associated_token::authority = config,
     )]
     pub vault_usdc: InterfaceAccount<'info, TokenAccount>,
 
@@ -59,7 +59,7 @@ pub struct Withdraw<'info> {
 
 impl<'info> Withdraw<'info> {
 
-    pub fn withdraw(&self, cusdc_amount: u64, remaining_accounts: &'info [AccountInfo<'info>]) -> Result<()> 
+    pub fn withdraw(&mut self, cusdc_amount: u64, remaining_accounts: &'info [AccountInfo<'info>]) -> Result<()> 
     {
         require!(cusdc_amount > 0, AggregatorError::InvalidAmount);
 
@@ -85,6 +85,7 @@ impl<'info> Withdraw<'info> {
             remaining_accounts,
             self.config.clone(),
             self.vault_usdc.clone(),
+            self.usdc_mint.clone(),
             self.token_program.clone(),
             self.associated_token_program.to_account_info(),
             self.system_program.to_account_info(),
@@ -103,6 +104,8 @@ impl<'info> Withdraw<'info> {
             ),
             cusdc_amount,
         )?;
+
+        self.vault_usdc.reload()?;
 
 
         let seeds = &[b"config".as_ref(), &[config.bump]];
@@ -123,7 +126,7 @@ impl<'info> Withdraw<'info> {
             self.usdc_mint.decimals
         )?;
 
-        
+        self.vault_usdc.reload()?;
         
         // Rebalance JupLend and Kamino allocation
         rebalance_allocation(
@@ -132,6 +135,7 @@ impl<'info> Withdraw<'info> {
             usdc_in_all_protocol,
             &self.config,
             &self.vault_usdc,
+            &self.usdc_mint,
             &self.token_program,
             &self.associated_token_program,
             &self.system_program,

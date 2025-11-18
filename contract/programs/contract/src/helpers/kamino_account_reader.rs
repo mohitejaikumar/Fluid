@@ -102,6 +102,7 @@ pub mod reserve_offsets {
 // ============================================================================
 
 /// Read VaultState fields needed for balance calculation
+#[derive(Debug)]
 pub struct VaultStateFields {
     pub token_available: u64,
     pub shares_issued: u64,

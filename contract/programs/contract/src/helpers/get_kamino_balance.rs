@@ -51,6 +51,8 @@ pub fn get_kamino_balance<'info>(
     // Read only the fields we need using byte offsets
     let vault_fields = read_vault_state_fields(&vault_data)?;
 
+    msg!("Vault fields: {:?}", vault_fields);
+
     // Get user's shares from their token account
     let user_shares = user_shares_ktoken.amount;
 
