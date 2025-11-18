@@ -53,7 +53,7 @@ impl<'info> Rebalance<'info> {
             remaining_accounts,
             usdc_in_all_protocol,
             &self.config,
-            &self.vault_usdc,
+            &mut self.vault_usdc,
             &self.usdc_mint,
             &self.token_program,
             &self.associated_token_program,

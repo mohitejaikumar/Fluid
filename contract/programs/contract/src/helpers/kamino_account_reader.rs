@@ -67,10 +67,17 @@ pub mod reserve_offsets {
     pub const ACCUMULATED_REFERRER_FEES_SF: usize = ACCUMULATED_PROTOCOL_FEES_SF + 16; // u128
     pub const PENDING_REFERRER_FEES_SF: usize = ACCUMULATED_REFERRER_FEES_SF + 16; // u128
     
-    // ReserveLiquidity is 1736 bytes total
+    // ReserveLiquidity size calculation:
+    // mint_pubkey (32) + supply_vault (32) + fee_vault (32) + available_amount (8)
+    // + borrowed_amount_sf (16) + market_price_sf (16) + market_price_last_updated_ts (8)
+    // + mint_decimals (8) + deposit_limit_crossed_timestamp (8) + borrow_limit_crossed_timestamp (8)
+    // + cumulative_borrow_rate_bsf (48) + accumulated_protocol_fees_sf (16) + accumulated_referrer_fees_sf (16)
+    // + pending_referrer_fees_sf (16) + absolute_referral_rate_sf (16) + token_program (32)
+    // + padding2 (51*8=408) + padding3 (32*16=512)
+    // = 1232 bytes total
     // Skip reserve_liquidity_padding (150 * 8 = 1200)
-    // ReserveCollateral starts at: LIQUIDITY_START + 1736 + 1200 = 3056
-    pub const COLLATERAL_START: usize = LIQUIDITY_START + 1736 + 1200;
+    // ReserveCollateral starts at: LIQUIDITY_START + 1232 + 1200 = 2552
+    pub const COLLATERAL_START: usize = LIQUIDITY_START + 1232 + 1200;
     
     // Within ReserveCollateral:
     // mint_pubkey (32)
@@ -78,7 +85,8 @@ pub mod reserve_offsets {
     
     // ReserveCollateral is 1096 bytes
     // Skip reserve_collateral_padding (150 * 8 = 1200)
-    // ReserveConfig starts at: COLLATERAL_START + 1096 + 1200 = 5352
+    // ReserveConfig starts at: COLLATERAL_START + 1096 + 1200
+    // = 2552 + 1096 + 1200 = 4848
     pub const CONFIG_START: usize = COLLATERAL_START + 1096 + 1200;
     
     // Within ReserveConfig:

@@ -13,8 +13,6 @@ use crate::{
 /// Kamino VaultState discriminator
 const VAULT_STATE_DISCRIMINATOR: [u8; 8] = [228, 196, 82, 165, 98, 210, 235, 152];
 
-/// Scale factor for exchange rate calculations (1e18)
-const SCALE_FACTOR_BASE: u128 = 1_000_000_000_000_000_000;
 const INITIAL_COLLATERAL_RATE: Fraction = Fraction::ONE;
 
 /// Slots per year for interest calculation (2 slots/sec * 60 * 60 * 24 * 365)
@@ -51,10 +49,15 @@ pub fn get_kamino_balance<'info>(
     // Read only the fields we need using byte offsets
     let vault_fields = read_vault_state_fields(&vault_data)?;
 
-    msg!("Vault fields: {:?}", vault_fields);
-
     // Get user's shares from their token account
     let user_shares = user_shares_ktoken.amount;
+    
+    // msg!("========== RAW VAULT VALUES ==========");
+    // msg!("token_available: {}", vault_fields.token_available);
+    // msg!("shares_issued: {}", vault_fields.shares_issued);
+    // msg!("pending_fees_sf: {}", vault_fields.pending_fees_sf);
+    // msg!("user_shares: {}", user_shares);
+    // msg!("======================================");
 
     // If no shares issued, return 0
     if vault_fields.shares_issued == 0 {
@@ -68,6 +71,9 @@ pub fn get_kamino_balance<'info>(
         current_slot,
     )?;
 
+    // msg!("Total invested (Fraction): {:?}", total_invested.to_display());
+    // msg!("Total invested (floor): {:?}", total_invested.try_to_floor::<u64>());
+
     // Calculate tokens per share
     // tokensPerShare = (available + invested - pendingFees) / sharesIssued
 
@@ -78,20 +84,38 @@ pub fn get_kamino_balance<'info>(
     let total_aum = Fraction::from(vault_fields.token_available)
         .checked_add(total_invested)
         .ok_or(AggregatorError::MathOverflow)?;
+    
+    // msg!("total_aum: {}", total_aum.try_to_floor::<u64>().unwrap_or(0));
 
     // Calculate net AUM: total_aum - pending_fees
     let net_aum = total_aum
         .checked_sub(pending_fees)
         .ok_or(AggregatorError::MathOverflow)?;
+    
+    // msg!("net_aum: {}", net_aum.try_to_floor::<u64>().unwrap_or(0));
+    // msg!("==============================================");
 
-    // Calculate user balance: (user_shares * net_aum) / shares_issued
-    let user_balance = (Fraction::from(user_shares)
-        .checked_mul(net_aum)
-        .ok_or(AggregatorError::MathOverflow)?)
+    // Calculate user balance: user_shares * (net_aum / shares_issued)
+    // Calculate tokens per share first to avoid overflow
+    // msg!("Calculating: {} * (net_aum / {})", user_shares, vault_fields.shares_issued);
+    
+    let tokens_per_share = net_aum
         .checked_div(Fraction::from(vault_fields.shares_issued))
         .ok_or(AggregatorError::MathOverflow)?;
     
-    user_balance.try_to_floor::<u64>().ok_or(AggregatorError::MathOverflow.into())
+    // msg!("tokens_per_share: {:?}", tokens_per_share.to_display());
+    
+    let user_balance = Fraction::from(user_shares)
+        .checked_mul(tokens_per_share)
+        .ok_or(AggregatorError::MathOverflow)?;
+    
+    // msg!("user_balance (before floor): {:?}", user_balance.to_display());
+    
+    let final_balance = user_balance.try_to_floor::<u64>().ok_or(AggregatorError::MathOverflow)?;
+    
+    // msg!("FINAL user_balance: {}", final_balance);
+    
+    Ok(final_balance)
 }
 
 /// Calculate the total amount invested in reserves, applying the proper exchange rate from each reserve.
@@ -102,6 +126,7 @@ fn calculate_total_invested_with_exchange_rate(
     current_slot: Option<u64>,
 ) -> Result<Fraction> {
     let mut total_invested = Fraction::ZERO;
+    // let mut allocation_count = 0;
 
     // Iterate through all possible allocations (max 25)
     for i in 0..vault_offsets::MAX_RESERVES {
@@ -116,6 +141,9 @@ fn calculate_total_invested_with_exchange_rate(
         if ctoken_allocation_f == Fraction::ZERO {
             continue;
         }
+        
+        // allocation_count += 1;
+        // msg!("Processing allocation #{} at index {}", allocation_count, i);
 
         // Find the corresponding reserve account
         let reserve_account = reserve_accounts
@@ -123,21 +151,40 @@ fn calculate_total_invested_with_exchange_rate(
             .find(|acc| acc.key() == allocation.reserve);
 
         let exchange_rate = match reserve_account {
-            Some(acc) => calculate_collateral_exchange_rate(acc, current_slot)?,
-            None => INITIAL_COLLATERAL_RATE, // Fallback to 1.0 if reserve account not provided
+            Some(acc) => {
+                // msg!("Reserve {}: Found matching reserve account", i);
+                calculate_collateral_exchange_rate(acc, current_slot)?
+            },
+            None => {
+                // msg!("Reserve {}: NO matching reserve account - using default rate 1.0", i);
+                INITIAL_COLLATERAL_RATE // Fallback to 1.0 if reserve account not provided
+            }
         };
+        
+        // msg!("========== RESERVE {} RAW VALUES ==========", i);
+        // msg!("Reserve {}: reserve_pubkey = {}", i, allocation.reserve);
+        // msg!("Reserve {}: ctoken_allocation = {}", i, allocation.ctoken_allocation);
+        // msg!("Reserve {}: exchange_rate_bits = {}", i, exchange_rate.to_bits());
+        // msg!("Reserve {}: exchange_rate_display = {:?}", i, exchange_rate.to_display());
 
-        // invested = (ctoken_allocation * SCALE_FACTOR_BASE) / exchange_rate
-        let invested_amount = (ctoken_allocation_f
-            .checked_mul(Fraction::from_sf(SCALE_FACTOR_BASE))
-            .ok_or(AggregatorError::MathOverflow)?)
+        // invested = ctoken_allocation / exchange_rate
+        // Note: exchange_rate already includes SCALE_FACTOR_BASE in its calculation
+        // so we don't multiply by it again
+        let invested_amount = ctoken_allocation_f
             .checked_div(exchange_rate)
             .ok_or(AggregatorError::MathOverflow)?;
+        
+        // msg!("Reserve {}: invested_amount = {}", i, invested_amount.try_to_floor::<u64>().unwrap_or(0));
+        // msg!("===========================================");
 
         total_invested = total_invested
             .checked_add(invested_amount)
             .ok_or(AggregatorError::MathOverflow)?;
     }
+    
+    // msg!("Total allocations processed: {}", allocation_count);
+    // msg!("========== FINAL CALCULATION VALUES ==========");
+    // msg!("total_invested: {}", total_invested.try_to_floor::<u64>().unwrap_or(0));
 
     Ok(total_invested)
 }
@@ -187,11 +234,26 @@ fn calculate_collateral_exchange_rate(
 
     // Minimum size check
     if reserve_data.len() < 100 {
+        // msg!("Reserve data too small, returning initial rate");
         return Ok(INITIAL_COLLATERAL_RATE);
     }
 
     // Read only the fields we need using byte offsets
     let reserve = read_reserve_fields(&reserve_data)?;
+    
+    // msg!("========== RESERVE ACCOUNT RAW VALUES ==========");
+    // msg!("Reserve account: {}", reserve_account.key());
+    // msg!("available_amount: {}", reserve.available_amount);
+    // msg!("borrowed_amount_sf: {}", reserve.borrowed_amount_sf);
+    // msg!("accumulated_protocol_fees_sf: {}", reserve.accumulated_protocol_fees_sf);
+    // msg!("accumulated_referrer_fees_sf: {}", reserve.accumulated_referrer_fees_sf);
+    // msg!("pending_referrer_fees_sf: {}", reserve.pending_referrer_fees_sf);
+    // msg!("mint_total_supply: {}", reserve.mint_total_supply);
+    // msg!("last_update_slot: {}", reserve.last_update_slot);
+    // if let Some(slot) = current_slot {
+    //     msg!("current_slot: {}", slot);
+    // }
+    // msg!("===============================================");
 
     let mint_total_supply = Fraction::from(reserve.mint_total_supply);
 
@@ -203,19 +265,23 @@ fn calculate_collateral_exchange_rate(
         // Use stale total supply from last update
         calculate_total_supply(&reserve)?
     };
+    
+    // msg!("total_supply (calculated): {}", total_supply.try_to_floor::<u64>().unwrap_or(0));
 
     // If either is zero, return initial rate (1.0)
     if mint_total_supply == Fraction::ZERO || total_supply == Fraction::ZERO {
+        // msg!("mint_total_supply or total_supply is ZERO, returning initial rate 1.0");
         return Ok(INITIAL_COLLATERAL_RATE);
     }
 
-    // Calculate exchange rate: (mintTotalSupply * SCALE_FACTOR) / totalSupply
-    // This matches Kamino's CollateralExchangeRate::from_supply_and_liquidity()
-    let exchange_rate = (mint_total_supply
-        .checked_mul(Fraction::from_sf(SCALE_FACTOR_BASE))
-        .ok_or(AggregatorError::MathOverflow)?)
+    // Calculate exchange rate: mintTotalSupply / totalSupply
+    // Note: We don't multiply by SCALE_FACTOR_BASE because Fraction handles scaling internally
+    let exchange_rate = mint_total_supply
         .checked_div(total_supply)
         .ok_or(AggregatorError::MathOverflow)?;
+    
+    // msg!("FINAL exchange_rate_bits: {}", exchange_rate.to_bits());
+    // msg!("FINAL exchange_rate_display: {:?}", exchange_rate.to_display());
 
     Ok(exchange_rate)
 }

@@ -10,7 +10,7 @@ pub mod events;
 pub mod constants;
 
 
-declare_id!("8JYjMH8gYuUEr3EvgHHVxzQq6uu7o5c8LCUGwoSLZLvv");
+declare_id!("AUQt43E6brmpbQ1zeWCtSvZX9zBUEkoYmHrthQk8eA6W");
 
 #[program]
 pub mod contract {

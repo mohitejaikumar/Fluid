@@ -207,6 +207,7 @@ impl<'info> KaminoVault<'info> {
             reserve.reserve_liquidity_supply.clone(),
             reserve.reserve_collateral_mint.clone(),
             reserve.reserve_collateral_token_program.clone(),
+            self.instruction_sysvar.clone(),
             self.event_authority.clone(), 
             self.kamino_lending_vault_program.clone(),
             self.reserve_accounts[0].reserve.clone(),
@@ -227,7 +228,7 @@ impl<'info> KaminoVault<'info> {
         msg!("Number of reserves: {}", self.reserve_accounts.len());
         
         
-        let shares_per_reserve = shares_amount / (self.reserve_accounts.len() as u64);
+        let shares_remaining = shares_amount;
         
         for (index, reserve) in self.reserve_accounts.iter().enumerate() {
             msg!("Withdrawing from reserve {} of {}", index + 1, self.reserve_accounts.len());
@@ -235,9 +236,9 @@ impl<'info> KaminoVault<'info> {
             
             let amount_for_reserve = if index == self.reserve_accounts.len() - 1 {
                 
-                shares_amount - (shares_per_reserve * (index as u64))
+                shares_remaining
             } else {
-                shares_per_reserve
+                0
             };
             
             if amount_for_reserve > 0 {
@@ -312,7 +313,7 @@ impl<'info> KaminoVault<'info> {
         let signer_seeds = &[&seeds[..]];
 
         let _ = close_account(CpiContext::new_with_signer(
-            self.user_shares_ata.to_account_info(),
+            self.associated_token_program.to_account_info(),
             CloseAccount {
                 account: self.user_shares_ata.to_account_info(),
                 authority: self.config.to_account_info(),
@@ -340,37 +341,37 @@ impl<'info> KaminoVault<'info> {
             &self.config.to_account_info(),
         )?;
         
-        if self.has_farm() {
-            let shares_in_ata = user_shares_ata.amount;
-            msg!("Vault has farm. Shares in ATA: {}", shares_in_ata);
+        // if self.has_farm() {
+        //     let shares_in_ata = user_shares_ata.amount;
+        //     msg!("Vault has farm. Shares in ATA: {}", shares_in_ata);
             
-            // Check if we need to unstake (not enough shares in ATA)
-            if shares_amount > shares_in_ata {
-                msg!("Need to unstake from farm");
+        //     // Check if we need to unstake (not enough shares in ATA)
+        //     if shares_amount > shares_in_ata {
+        //         msg!("Need to unstake from farm");
                 
                 
-                let amount_to_unstake = if shares_amount == u64::MAX {
-                    u64::MAX
-                } else {
-                    shares_amount.saturating_sub(shares_in_ata)
-                };
+        //         let amount_to_unstake = if shares_amount == u64::MAX {
+        //             u64::MAX
+        //         } else {
+        //             shares_amount.saturating_sub(shares_in_ata)
+        //         };
                 
-                msg!("Unstaking {} shares", amount_to_unstake);
+        //         msg!("Unstaking {} shares", amount_to_unstake);
                 
                 
-                self.unstake_from_farm(amount_to_unstake, config_bump)?;
-                self.withdraw_unstaked_from_farm(config_bump)?;
-            } else {
-                msg!("Enough shares in ATA, no need to unstake");
-            }
-        } else {
-            msg!("Vault has no farm, skipping farm operations");
-        }
+        //         self.unstake_from_farm(amount_to_unstake, config_bump)?;
+        //         self.withdraw_unstaked_from_farm(config_bump)?;
+        //     } else {
+        //         msg!("Enough shares in ATA, no need to unstake");
+        //     }
+        // } else {
+        //     msg!("Vault has no farm, skipping farm operations");
+        // }
 
         self.create_shares_ata(
             &self.token_mint.to_account_info(),
             &self.user_token_ata.to_account_info(),
-            &self.signer.to_account_info(),
+            &self.config.to_account_info(),
         )?;
 
         

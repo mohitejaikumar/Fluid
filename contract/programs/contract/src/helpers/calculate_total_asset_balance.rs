@@ -83,6 +83,7 @@ pub fn calculate_total_asset_balance<'info>(
     let _jup_liquidity_program = account_iter.next().unwrap();
     let _jup_claim_account = account_iter.next().unwrap();
     let _jup_lending_program = account_iter.next().unwrap();
+    
     let kamino_vault_state = account_iter.next().unwrap();
     let _kamino_token_vault = account_iter.next().unwrap();
     let _kamino_base_vault_authority = account_iter.next().unwrap();

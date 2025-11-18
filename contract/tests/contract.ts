@@ -85,6 +85,28 @@ describe("contract", () => {
   let jupLendingAccounts: AccountMeta[];
   let kaminoAccounts: AccountMeta[];
 
+  // Event listeners
+  let eventListeners: Array<() => void> = [];
+  let capturedEvents: Array<any> = [];
+
+  const setupEventListener = (eventName: string) => {
+    const listener = program.addEventListener(eventName as any, (event, slot, signature) => {
+      console.log(`📡 Event captured: ${eventName}`, {
+        event,
+        slot,
+        signature
+      });
+      capturedEvents.push({
+        name: eventName,
+        event,
+        slot,
+        signature
+      });
+    });
+    eventListeners.push(() => program.removeEventListener(listener));
+    return listener;
+  };
+
 
   before(async ()=> {
 
@@ -578,12 +600,20 @@ describe("contract", () => {
    ]
 
   })
-
+  
+  after(async () => {
+    // Clean up event listeners
+    eventListeners.forEach(listener => listener());
+  });
  
 
   it("Is initialized!", async () => {
-    
-    const tx = await program.methods.initAggregatorConfig(10000).accountsStrict({
+    setupEventListener("DepositEvent");
+    setupEventListener("WithdrawEvent");
+    setupEventListener("RebalanceEvent");
+    setupEventListener("AllocationUpdateEvent");
+
+    const tx = await program.methods.initAggregatorConfig(5000).accountsStrict({
       authority: signer.publicKey,
       usdcMint: usdcMint,
       tokenProgram: TOKEN_PROGRAM_ID,
@@ -704,9 +734,13 @@ describe("contract", () => {
     const userCUSDCBalance = await provider.connection.getTokenAccountBalance(new PublicKey(signerCUSDC));
     console.log(`userCUSDCBalance: ${userCUSDCBalance.value.amount}`);
 
+    const userSharesBalance = await provider.connection.getTokenAccountBalance(new PublicKey(userSharesAta));
+    console.log(`userSharesBalance: ${userSharesBalance.value.amount}`);
+
     // JlUSDCBlance > 0
     assert.isTrue(Number(configJlUSDCBalance.value.amount) > 0);
     assert.isTrue(Number(userCUSDCBalance.value.amount) > 0);
+    assert.isTrue(Number(userSharesBalance.value.amount) > 0);
   })
 
   it("Update strategy", async () => {
@@ -717,7 +751,7 @@ describe("contract", () => {
       usdcMint: usdcMint,
     }
 
-    const updateConfigIx = await program.methods.updateStrategy(10000) // 50% allocation to Juplend
+    const updateConfigIx = await program.methods.updateStrategy(6000) // 50% allocation to Juplend
       .accountsStrict(accounts)
       .signers([signer])
       .rpc({
@@ -771,23 +805,25 @@ describe("contract", () => {
 
     try {
       // First simulate the transaction to get detailed logs
-      // const simulation = await provider.connection.simulateTransaction(transaction, {
-      //   commitment: 'confirmed',
-      // });
+      const simulation = await provider.connection.simulateTransaction(transaction, {
+        commitment: 'confirmed',
+      });
       
-      // console.log("Simulation result:", JSON.stringify(simulation, null, 2));
+      console.log("Simulation result:", JSON.stringify(simulation, null, 2));
       
-      // if (simulation.value.err) {
-      //   console.error("Simulation error:", simulation.value.err);
-      //   console.log("Simulation logs:");
-      //   simulation.value.logs?.forEach((log, idx) => console.log(`  ${idx}: ${log}`));
-      //   throw new Error(`Simulation failed: ${JSON.stringify(simulation.value.err)}`);
-      // }
+      if (simulation.value.err) {
+        console.error("Simulation error:", simulation.value.err);
+        console.log("Simulation logs:");
+        simulation.value.logs?.forEach((log, idx) => console.log(`  ${idx}: ${log}`));
+        throw new Error(`Simulation failed: ${JSON.stringify(simulation.value.err)}`);
+      }
 
-      const txid = await provider.connection.sendTransaction(transaction, {
+      const txid = await provider.connection.sendTransaction(transaction, 
+      {
         skipPreflight: false,
         maxRetries: 3,
-      });
+      }
+    );
       
       console.log("Transaction sent:", txid);
       const confirmation = await provider.connection.confirmTransaction(txid, 'confirmed');
@@ -909,7 +945,17 @@ describe("contract", () => {
       console.log(`userUSDCBalance: ${userUSDCBalance.value.amount}`);
 
       assert.isTrue(Number(userUSDCBalance.value.amount) > 0);
+
+      // Wait for final events to propagate
+      await new Promise(resolve => setTimeout(resolve, 3000));
+
+      capturedEvents.forEach((eventData, index) => {
+        console.log(`   Event ${index + 1}: ${eventData.name}`);
+        console.log(`     Data:`, JSON.stringify(eventData.event, null, 2));
+      });
   })
+
+  
 
   
 });
