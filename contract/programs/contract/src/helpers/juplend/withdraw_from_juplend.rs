@@ -90,7 +90,10 @@ impl<'info> Juplend<'info> {
             ],
             signer_seeds,
         )
-        .map_err(|_| AggregatorError::CpiToLendingProgramFailed)?;
+        .map_err(|e| {
+            msg!("JupLend withdraw CPI failed with error: {:?}", e);
+            AggregatorError::CpiToLendingProgramFailed
+        })?;
     
         Ok(())
     }

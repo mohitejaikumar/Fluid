@@ -70,7 +70,10 @@ impl<'info> KaminoVault<'info> {
             ],
             signer_seeds,
         )
-        .map_err(|_| AggregatorError::CpiToLendingProgramFailed)?;
+        .map_err(|e| {
+            msg!("Kamino farm unstake CPI failed with error: {:?}", e);
+            AggregatorError::CpiToLendingProgramFailed
+        })?;
 
         Ok(())
     }
@@ -114,7 +117,10 @@ impl<'info> KaminoVault<'info> {
             ],
             signer_seeds,
         )
-        .map_err(|_| AggregatorError::CpiToLendingProgramFailed)?;
+        .map_err(|e| {
+            msg!("Kamino farm withdraw unstaked CPI failed with error: {:?}", e);
+            AggregatorError::CpiToLendingProgramFailed
+        })?;
 
         Ok(())
     }
@@ -214,7 +220,10 @@ impl<'info> KaminoVault<'info> {
         ];
 
         invoke_signed(&instruction, &accounts_for_cpi, signer_seeds)
-            .map_err(|_| AggregatorError::CpiToLendingProgramFailed)?;
+            .map_err(|e| {
+                msg!("Kamino withdraw from reserve CPI failed with error: {:?}", e);
+                AggregatorError::CpiToLendingProgramFailed
+            })?;
 
         Ok(())
     }
@@ -297,7 +306,10 @@ impl<'info> KaminoVault<'info> {
             ],
             signer_seeds,
         )
-        .map_err(|_| AggregatorError::CpiToLendingProgramFailed)?;
+        .map_err(|e| {
+            msg!("Kamino withdraw from available CPI failed with error: {:?}", e);
+            AggregatorError::CpiToLendingProgramFailed
+        })?;
 
         Ok(())
     }
@@ -309,7 +321,7 @@ impl<'info> KaminoVault<'info> {
         let seeds = &[b"config".as_ref(), &[config_bump]];
         let signer_seeds = &[&seeds[..]];
 
-        let _ = close_account(CpiContext::new_with_signer(
+        close_account(CpiContext::new_with_signer(
             self.associated_token_program.to_account_info(),
             CloseAccount {
                 account: self.user_shares_ata.to_account_info(),
@@ -317,7 +329,7 @@ impl<'info> KaminoVault<'info> {
                 destination: self.config.to_account_info(),
             },
             signer_seeds,
-        ));
+        ))?;
 
         Ok(())
     }

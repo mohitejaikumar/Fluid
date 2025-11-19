@@ -51,7 +51,7 @@ pub fn rebalance_allocation<'info>(
         token_program,
         associated_token_program,
         system_program,
-    );
+    )?;
     let kamino_accounts = KaminoVault::new(
         signer,
         config,
@@ -62,7 +62,7 @@ pub fn rebalance_allocation<'info>(
         associated_token_program,
         system_program,
         rent,
-    );
+    )?;
 
     msg!("Juplend balance: {}", target_juplend_balance);
     msg!("Kamino balance: {}", target_kamino_balance);
@@ -182,7 +182,7 @@ fn execute_rebalance<'info>(
             config_bump,
         )?;
 
-        vault_usdc.reload()?;
+        vault_usdc.reload().map_err(|_| AggregatorError::AccountReloadFailed)?;
 
         msg!("Kamino vault usdc amount after reload: {}", vault_usdc.amount);
         msg!("Depositing to Juplend: {}", vault_usdc.amount);

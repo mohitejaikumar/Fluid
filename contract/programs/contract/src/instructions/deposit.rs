@@ -66,7 +66,7 @@ impl<'info> Deposit<'info> {
         msg!("Received {} remaining accounts", remaining_accounts.len());
         
         msg!("Transferring USDC to vault");
-        let _ = transfer_checked(
+        transfer_checked(
             CpiContext::new(
                 self.token_program.to_account_info(),
                 TransferChecked {
@@ -78,12 +78,12 @@ impl<'info> Deposit<'info> {
             ),
             amount, 
             self.usdc_mint.decimals
-        );
+        )?;
 
         msg!("Transferred USDC to vault");
         
         // Reload vault_usdc account to get updated balance after transfer
-        self.vault_usdc.reload()?;
+        self.vault_usdc.reload().map_err(|_| AggregatorError::AccountReloadFailed)?;
         
         // Get total USDC in all protocols combined
         let usdc_in_all_protocol = calculate_total_asset_balance(remaining_accounts)?;

@@ -71,7 +71,7 @@ impl<'info> KaminoVault<'info> {
         associated_token_program: &AccountInfo<'info>,
         system_program: &AccountInfo<'info>,
         rent: &AccountInfo<'info>,
-    ) -> Box<KaminoVault<'info>> {
+    ) -> Result<Box<KaminoVault<'info>>> {
 
         let mut account_iter = remaining_accounts.iter();
         
@@ -81,52 +81,52 @@ impl<'info> KaminoVault<'info> {
         }
 
         // Vault accounts
-        let kamino_vault_state = account_iter.next().unwrap();
-        let kamino_token_vault = account_iter.next().unwrap();
-        let kamino_base_vault_authority = account_iter.next().unwrap();
-        let kamino_shares_mint = account_iter.next().unwrap();
-        let kamino_user_shares_ata = account_iter.next().unwrap();
-        let kamino_klend_program = account_iter.next().unwrap();
-        let kamino_shares_token_program = account_iter.next().unwrap();
-        let kamino_event_authority = account_iter.next().unwrap();
-        let kamino_lending_vault_program = account_iter.next().unwrap();
+        let kamino_vault_state = account_iter.next().ok_or(AggregatorError::MissingAccount)?;
+        let kamino_token_vault = account_iter.next().ok_or(AggregatorError::MissingAccount)?;
+        let kamino_base_vault_authority = account_iter.next().ok_or(AggregatorError::MissingAccount)?;
+        let kamino_shares_mint = account_iter.next().ok_or(AggregatorError::MissingAccount)?;
+        let kamino_user_shares_ata = account_iter.next().ok_or(AggregatorError::MissingAccount)?;
+        let kamino_klend_program = account_iter.next().ok_or(AggregatorError::MissingAccount)?;
+        let kamino_shares_token_program = account_iter.next().ok_or(AggregatorError::MissingAccount)?;
+        let kamino_event_authority = account_iter.next().ok_or(AggregatorError::MissingAccount)?;
+        let kamino_lending_vault_program = account_iter.next().ok_or(AggregatorError::MissingAccount)?;
         
         // Farm accounts
-        let kamino_user_state = account_iter.next().unwrap();
-        let kamino_farm_state = account_iter.next().unwrap();
-        let kamino_farm_vault = account_iter.next().unwrap();
-        let kamino_scope_prices = account_iter.next().unwrap();
-        let kamino_farm_program = account_iter.next().unwrap();
-        let kamino_vault_program = account_iter.next().unwrap();
-        let kamino_farm_vault_authority = account_iter.next().unwrap();
+        let kamino_user_state = account_iter.next().ok_or(AggregatorError::MissingAccount)?;
+        let kamino_farm_state = account_iter.next().ok_or(AggregatorError::MissingAccount)?;
+        let kamino_farm_vault = account_iter.next().ok_or(AggregatorError::MissingAccount)?;
+        let kamino_scope_prices = account_iter.next().ok_or(AggregatorError::MissingAccount)?;
+        let kamino_farm_program = account_iter.next().ok_or(AggregatorError::MissingAccount)?;
+        let kamino_vault_program = account_iter.next().ok_or(AggregatorError::MissingAccount)?;
+        let kamino_farm_vault_authority = account_iter.next().ok_or(AggregatorError::MissingAccount)?;
         
         
-        let instruction_sysvar = account_iter.next().unwrap();
+        let instruction_sysvar = account_iter.next().ok_or(AggregatorError::MissingAccount)?;
         
         
         let mut reserve_accounts: Vec<ReserveWithdrawAccounts<'info>> = Vec::new();
         
         // Reserve 1 (7 accounts)
         let reserve_1 = ReserveWithdrawAccounts {
-            reserve: account_iter.next().unwrap().to_account_info(),
-            ctoken_vault: account_iter.next().unwrap().to_account_info(),
-            lending_market: account_iter.next().unwrap().to_account_info(),
-            lending_market_authority: account_iter.next().unwrap().to_account_info(),
-            reserve_liquidity_supply: account_iter.next().unwrap().to_account_info(),
-            reserve_collateral_mint: account_iter.next().unwrap().to_account_info(),
-            reserve_collateral_token_program: account_iter.next().unwrap().to_account_info(),
+            reserve: account_iter.next().ok_or(AggregatorError::MissingAccount)?.to_account_info(),
+            ctoken_vault: account_iter.next().ok_or(AggregatorError::MissingAccount)?.to_account_info(),
+            lending_market: account_iter.next().ok_or(AggregatorError::MissingAccount)?.to_account_info(),
+            lending_market_authority: account_iter.next().ok_or(AggregatorError::MissingAccount)?.to_account_info(),
+            reserve_liquidity_supply: account_iter.next().ok_or(AggregatorError::MissingAccount)?.to_account_info(),
+            reserve_collateral_mint: account_iter.next().ok_or(AggregatorError::MissingAccount)?.to_account_info(),
+            reserve_collateral_token_program: account_iter.next().ok_or(AggregatorError::MissingAccount)?.to_account_info(),
         };
         reserve_accounts.push(reserve_1);
         
         // Reserve 2 (7 accounts)
         let reserve_2 = ReserveWithdrawAccounts {
-            reserve: account_iter.next().unwrap().to_account_info(),
-            ctoken_vault: account_iter.next().unwrap().to_account_info(),
-            lending_market: account_iter.next().unwrap().to_account_info(),
-            lending_market_authority: account_iter.next().unwrap().to_account_info(),
-            reserve_liquidity_supply: account_iter.next().unwrap().to_account_info(),
-            reserve_collateral_mint: account_iter.next().unwrap().to_account_info(),
-            reserve_collateral_token_program: account_iter.next().unwrap().to_account_info(),
+            reserve: account_iter.next().ok_or(AggregatorError::MissingAccount)?.to_account_info(),
+            ctoken_vault: account_iter.next().ok_or(AggregatorError::MissingAccount)?.to_account_info(),
+            lending_market: account_iter.next().ok_or(AggregatorError::MissingAccount)?.to_account_info(),
+            lending_market_authority: account_iter.next().ok_or(AggregatorError::MissingAccount)?.to_account_info(),
+            reserve_liquidity_supply: account_iter.next().ok_or(AggregatorError::MissingAccount)?.to_account_info(),
+            reserve_collateral_mint: account_iter.next().ok_or(AggregatorError::MissingAccount)?.to_account_info(),
+            reserve_collateral_token_program: account_iter.next().ok_or(AggregatorError::MissingAccount)?.to_account_info(),
         };
         reserve_accounts.push(reserve_2);
     
@@ -162,7 +162,7 @@ impl<'info> KaminoVault<'info> {
             kamino_vault_program: kamino_vault_program.to_account_info(),
         });
 
-        kamino_accounts
+        Ok(kamino_accounts)
     }
 
     
@@ -194,7 +194,10 @@ impl<'info> KaminoVault<'info> {
                 }
             )
         )
-        .map_err(|_| AggregatorError::CpiToLendingProgramFailed)?;
+        .map_err(|e| {
+            msg!("Kamino create ATA CPI failed with error: {:?}", e);
+            AggregatorError::CpiToLendingProgramFailed
+        })?;
 
         Ok(())
     }
@@ -261,7 +264,10 @@ impl<'info> KaminoVault<'info> {
         }
 
         invoke_signed(&instruction, &accounts_for_cpi, signer_seeds)
-            .map_err(|_| AggregatorError::CpiToLendingProgramFailed)?;
+            .map_err(|e| {
+                msg!("Kamino deposit CPI failed with error: {:?}", e);
+                AggregatorError::CpiToLendingProgramFailed
+            })?;
     
         Ok(())
     }
@@ -305,7 +311,10 @@ impl<'info> KaminoVault<'info> {
             ],
             signer_seeds,
         )
-        .map_err(|_| AggregatorError::CpiToLendingProgramFailed)?;
+        .map_err(|e| {
+            msg!("Kamino farm init user CPI failed with error: {:?}", e);
+            AggregatorError::CpiToLendingProgramFailed
+        })?;
 
         Ok(())
     }
@@ -349,7 +358,10 @@ impl<'info> KaminoVault<'info> {
             ],
             signer_seeds,
         )
-        .map_err(|_| AggregatorError::CpiToLendingProgramFailed)?;
+        .map_err(|e| {
+            msg!("Kamino farm stake CPI failed with error: {:?}", e);
+            AggregatorError::CpiToLendingProgramFailed
+        })?;
 
         Ok(())
     }
@@ -388,9 +400,7 @@ impl<'info> KaminoVault<'info> {
         self.deposit_to_kamino(amount, config_bump)?;
         
         // Step 3: Stake in farm if vault has one
-        /*
-          we have not did kamino farm staking but this implement is here for future use
-         */
+        
         // self.stake_shares_in_farm(u64::MAX, config_bump)?;
         
         Ok(())

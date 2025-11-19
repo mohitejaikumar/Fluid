@@ -105,7 +105,7 @@ impl<'info> Withdraw<'info> {
             cusdc_amount,
         )?;
 
-        self.vault_usdc.reload()?;
+        self.vault_usdc.reload().map_err(|_| AggregatorError::AccountReloadFailed)?;
 
 
         let seeds = &[b"config".as_ref(), &[config.bump]];
@@ -126,7 +126,7 @@ impl<'info> Withdraw<'info> {
             self.usdc_mint.decimals
         )?;
 
-        self.vault_usdc.reload()?;
+        self.vault_usdc.reload().map_err(|_| AggregatorError::AccountReloadFailed)?;
         
         // Rebalance JupLend and Kamino allocation
         rebalance_allocation(

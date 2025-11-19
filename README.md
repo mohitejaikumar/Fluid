@@ -97,7 +97,7 @@ solana airdrop 10
 Since Surfpool simulates Mainnet conditions, you can use Surfpool's cheatcodes to mint USDC tokens to your wallet:
 
 ```bash
-# Replace AR17nM5NyBKVyHZhyULaecb1K9HdQcN7VPNjyP1qdTL with your actual wallet address
+# Replace AR17nM5Ny8kVyHZMhyULaecb1K9HdQcN7VPNjyPigdTL with your actual wallet address
 # EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v is the USDC mint address
 # TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA is the SPL Token program
 
@@ -108,7 +108,7 @@ curl -X POST http://localhost:8899 \
     "id": 1,
     "method": "surfnet_setTokenAccount",
     "params": [
-      "AR17nM5NyBKVyHZhyULaecb1K9HdQcN7VPNjyP1qdTL",
+      "AR17nM5Ny8kVyHZMhyULaecb1K9HdQcN7VPNjyPigdTL",
       "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
       "amount": 100000000000
     ],

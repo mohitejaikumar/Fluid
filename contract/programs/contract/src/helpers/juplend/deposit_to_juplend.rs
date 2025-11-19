@@ -53,28 +53,28 @@ impl<'info> Juplend<'info> {
         token_program: &Interface<'info, TokenInterface>,
         associated_token_program: &AccountInfo<'info>,
         system_program: &AccountInfo<'info>,
-    ) -> Box<Juplend<'info>> {
+    ) -> Result<Box<Juplend<'info>>> {
         
         let signer = config.to_account_info();
         let mut account_iter = remaining_accounts.iter();
         
-        let jup_lending = account_iter.next().unwrap();
-        let jup_lending_rewards_rate_model = account_iter.next().unwrap();
-        let jup_f_token_mint = account_iter.next().unwrap();
+        let jup_lending = account_iter.next().ok_or(AggregatorError::MissingAccount)?;
+        let jup_lending_rewards_rate_model = account_iter.next().ok_or(AggregatorError::MissingAccount)?;
+        let jup_f_token_mint = account_iter.next().ok_or(AggregatorError::MissingAccount)?;
 
-        let jup_vault_ftokens = account_iter.next().unwrap();
-        let jup_lending_admin = account_iter.next().unwrap();
-        let jup_supply_token_reserves_liquidity = account_iter.next().unwrap();
-        let jup_lending_supply_position_on_liquidity = account_iter.next().unwrap();
-        let jup_rate_model = account_iter.next().unwrap();
-        let jup_vault = account_iter.next().unwrap();
-        let jup_liquidity = account_iter.next().unwrap();
-        let jup_liquidity_program = account_iter.next().unwrap();
-        let jup_claim_account = account_iter.next().unwrap();
-        let jup_lending_program = account_iter.next().unwrap();
+        let jup_vault_ftokens = account_iter.next().ok_or(AggregatorError::MissingAccount)?;
+        let jup_lending_admin = account_iter.next().ok_or(AggregatorError::MissingAccount)?;
+        let jup_supply_token_reserves_liquidity = account_iter.next().ok_or(AggregatorError::MissingAccount)?;
+        let jup_lending_supply_position_on_liquidity = account_iter.next().ok_or(AggregatorError::MissingAccount)?;
+        let jup_rate_model = account_iter.next().ok_or(AggregatorError::MissingAccount)?;
+        let jup_vault = account_iter.next().ok_or(AggregatorError::MissingAccount)?;
+        let jup_liquidity = account_iter.next().ok_or(AggregatorError::MissingAccount)?;
+        let jup_liquidity_program = account_iter.next().ok_or(AggregatorError::MissingAccount)?;
+        let jup_claim_account = account_iter.next().ok_or(AggregatorError::MissingAccount)?;
+        let jup_lending_program = account_iter.next().ok_or(AggregatorError::MissingAccount)?;
 
 
-        Box::new(Self {
+        Ok(Box::new(Self {
             signer,
             asset_token_account: vault_usdc.to_account_info(),
             ftoken_account: jup_vault_ftokens.to_account_info(),
@@ -94,7 +94,7 @@ impl<'info> Juplend<'info> {
             system_program: system_program.to_account_info(),
             claim_account: jup_claim_account.to_account_info(),
             lending_program: jup_lending_program.to_account_info(),
-        })
+        }))
     }
 
     pub fn deposit_to_juplend(&self, amount: u64, config_bump: u8) -> Result<()> {
@@ -177,7 +177,10 @@ impl<'info> Juplend<'info> {
             ],
             signer_seeds,
         )
-        .map_err(|_| AggregatorError::CpiToLendingProgramFailed)?;
+        .map_err(|e| {
+            msg!("JupLend deposit CPI failed with error: {:?}", e);
+            AggregatorError::CpiToLendingProgramFailed
+        })?;
     
         Ok(())
     }

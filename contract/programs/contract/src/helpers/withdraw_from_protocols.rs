@@ -45,7 +45,7 @@ pub fn withdraw_from_protocols<'c, 'info>(
         &token_program,
         &associated_token_program,
         &system_program,
-    );
+    )?;
 
     let kamino_accounts = KaminoVault::new(
         &signer,
@@ -57,7 +57,7 @@ pub fn withdraw_from_protocols<'c, 'info>(
         &associated_token_program,
         &system_program,
         &rent,
-    );
+    )?;
 
 
     let kamino_user_shares_ata_account_info = InterfaceAccount::<TokenAccount>::try_from(&remaining_accounts[17])?;
@@ -83,7 +83,7 @@ pub fn withdraw_from_protocols<'c, 'info>(
             )?;
         }
         else {
-            
+
             juplend_accounts.withdraw_from_juplend(juplend_balance, config.bump)?;
             
             kamino_accounts.withdraw_from_kamino_by_shares(
