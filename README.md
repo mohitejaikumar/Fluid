@@ -16,7 +16,7 @@ Before you begin, ensure you have the following installed:
 - **Node.js** (v16 or higher)
 - **Yarn** or **npm**
 - **Rust** (latest stable version)
-- **Anchor CLI** (v0.30.0 or compatible version)
+- **Anchor CLI** (v0.30.0 or higher version)
 - **Solana CLI** (v1.18.0 or higher)
 
 ## Local Development Setup
