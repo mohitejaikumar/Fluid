@@ -1,0 +1,224 @@
+use std::fmt::{Display};
+use fixed::traits::{FromFixed, ToFixed};
+pub use fixed::types::U68F60 as Fraction;
+pub use fixed_macro::types::U68F60 as fraction;
+
+#[allow(clippy::assign_op_pattern)]
+#[allow(clippy::reversed_empty_ranges)]
+mod uint_types {
+    use uint::construct_uint;
+    construct_uint! {
+
+        pub struct U256(4);
+    }
+    construct_uint! {
+
+        pub struct U128(2);
+    }
+}
+
+pub use uint_types::{U128, U256};
+
+pub struct FractionDisplay<'a>(&'a Fraction);
+
+impl Display for FractionDisplay<'_> {
+    fn fmt(&self, formater: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let sf = self.0.to_bits();
+
+       
+        const ROUND_COMP: u128 = (1 << Fraction::FRAC_NBITS) / (10_000 * 2);
+        let sf = sf + ROUND_COMP;
+
+       
+        let i = sf >> Fraction::FRAC_NBITS;
+
+       
+        const FRAC_MASK: u128 = (1 << Fraction::FRAC_NBITS) - 1;
+        let f_p = (sf & FRAC_MASK) as u64;
+       
+        let f_p = ((f_p >> 30) * 10_000) >> 30;
+        write!(formater, "{i}.{f_p:0>4}")
+    }
+}
+
+impl std::fmt::Debug for FractionDisplay<'_> {
+    fn fmt(&self, formater: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formater, "{}", self)
+    }
+}
+
+pub trait FractionExtra {
+    fn to_percent<Dst: FromFixed>(&self) -> Option<Dst>;
+    fn to_bps<Dst: FromFixed>(&self) -> Option<Dst>;
+    fn from_percent<Src: ToFixed>(percent: Src) -> Self;
+    fn from_bps<Src: ToFixed>(bps: Src) -> Self;
+    fn checked_pow(&self, power: u32) -> Option<Self>
+    where
+        Self: std::marker::Sized;
+
+    fn mul_int_ratio(&self, numerator: impl Into<u128>, denominator: impl Into<u128>) -> Self;
+    fn full_mul_int_ratio(&self, numerator: impl Into<U256>, denominator: impl Into<U256>) -> Self;
+    fn full_mul_int_ratio_ceil(
+        &self,
+        numerator: impl Into<U256>,
+        denominator: impl Into<U256>,
+    ) -> Self;
+
+    fn div_ceil(&self, denominator: &Self) -> Self;
+
+    fn to_floor<Dst: FromFixed>(&self) -> Dst;
+    fn to_ceil<Dst: FromFixed>(&self) -> Dst;
+    fn to_round<Dst: FromFixed>(&self) -> Dst;
+
+    fn try_to_floor<Dst: FromFixed>(&self) -> Option<Dst>;
+    fn try_to_ceil<Dst: FromFixed>(&self) -> Option<Dst>;
+    fn try_to_round<Dst: FromFixed>(&self) -> Option<Dst>;
+
+    fn to_sf(&self) -> u128;
+    fn from_sf(sf: u128) -> Self;
+
+    fn to_display(&self) -> FractionDisplay;
+}
+
+impl FractionExtra for Fraction {
+    #[inline]
+    fn to_percent<Dst: FromFixed>(&self) -> Option<Dst> {
+        self.checked_mul(fraction!(100))?.round().checked_to_num()
+    }
+
+    #[inline]
+    fn to_bps<Dst: FromFixed>(&self) -> Option<Dst> {
+        self.checked_mul(fraction!(10_000))?
+            .round()
+            .checked_to_num()
+    }
+
+    #[inline]
+    fn from_percent<Src: ToFixed>(percent: Src) -> Self {
+        let percent = Fraction::from_num(percent);
+        percent / 100
+    }
+
+    #[inline]
+    fn from_bps<Src: ToFixed>(bps: Src) -> Self {
+        let bps = Fraction::from_num(bps);
+        bps / 10_000
+    }
+
+    #[inline]
+    fn checked_pow(&self, power: u32) -> Option<Self>
+    where
+        Self: Sized,
+    {
+        pow_fraction(*self, power)
+    }
+
+    #[inline]
+    fn mul_int_ratio(&self, numerator: impl Into<u128>, denominator: impl Into<u128>) -> Self {
+        let numerator = numerator.into();
+        let denominator = denominator.into();
+        *self * numerator / denominator
+    }
+
+    #[inline]
+    fn full_mul_int_ratio(&self, numerator: impl Into<U256>, denominator: impl Into<U256>) -> Self {
+        let numerator = numerator.into();
+        let denominator = denominator.into();
+        let big_sf = U256::from(self.to_bits());
+        let big_sf_res = big_sf * numerator / denominator;
+        let sf_res: u128 = big_sf_res
+            .try_into()
+            .expect("Denominator is not big enough, the result doesn't fit in a Fraction.");
+        Fraction::from_bits(sf_res)
+    }
+
+    #[inline]
+    fn full_mul_int_ratio_ceil(
+        &self,
+        numerator: impl Into<U256>,
+        denominator: impl Into<U256>,
+    ) -> Self {
+        let numerator = numerator.into();
+        let denominator = denominator.into();
+        let big_sf = U256::from(self.to_bits());
+        let big_sf_res = (big_sf * numerator + denominator - 1) / denominator;
+        let sf_res: u128 = big_sf_res
+            .try_into()
+            .expect("Denominator is not big enough, the result doesn't fit in a Fraction.");
+        Fraction::from_bits(sf_res)
+    }
+
+    #[inline]
+    fn div_ceil(&self, denum: &Self) -> Self {
+        let num_sf = self.to_bits();
+        let denum_sf = denum.to_bits();
+        let res_sf_u256 =
+            ((U256::from(num_sf) << Self::FRAC_NBITS) + U256::from(denum_sf - 1)) / denum_sf;
+        let res_sf = u128::try_from(res_sf_u256).expect("Overflow in div_ceil");
+        Self::from_bits(res_sf)
+    }
+
+    #[inline]
+    fn to_floor<Dst: FromFixed>(&self) -> Dst {
+        self.floor().to_num()
+    }
+
+    #[inline]
+    fn to_ceil<Dst: FromFixed>(&self) -> Dst {
+        self.ceil().to_num()
+    }
+
+    #[inline]
+    fn to_round<Dst: FromFixed>(&self) -> Dst {
+        self.round().to_num()
+    }
+
+    fn try_to_floor<Dst: FromFixed>(&self) -> Option<Dst> {
+        self.floor().checked_to_num()
+    }
+
+    fn try_to_ceil<Dst: FromFixed>(&self) -> Option<Dst> {
+        self.ceil().checked_to_num()
+    }
+
+    fn try_to_round<Dst: FromFixed>(&self) -> Option<Dst> {
+        self.round().checked_to_num()
+    }
+
+    #[inline]
+    fn to_sf(&self) -> u128 {
+        self.to_bits()
+    }
+
+    #[inline]
+    fn from_sf(sf: u128) -> Self {
+        Fraction::from_bits(sf)
+    }
+
+    #[inline]
+    fn to_display(&self) -> FractionDisplay {
+        FractionDisplay(self)
+    }
+}
+
+pub fn pow_fraction(fraction: Fraction, power: u32) -> Option<Fraction> {
+    if power == 0 {
+        return Some(Fraction::ONE);
+    }
+
+   
+   
+    let mut x = fraction;
+    let mut y = Fraction::ONE;
+    let mut n = power;
+
+    while n > 1 {
+        if n % 2 == 1 {
+            y = x.checked_mul(y)?;
+        }
+        x = x.checked_mul(x)?;
+        n /= 2;
+    }
+
+    x.checked_mul(y)
+}

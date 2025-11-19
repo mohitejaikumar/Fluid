@@ -86,16 +86,11 @@ describe("contract", () => {
   let kaminoAccounts: AccountMeta[];
 
   // Event listeners
-  let eventListeners: Array<() => void> = [];
+  let eventListeners: Array<number> = [];
   let capturedEvents: Array<any> = [];
 
-  const setupEventListener = (eventName: string) => {
-    const listener = program.addEventListener(eventName as any, (event, slot, signature) => {
-      console.log(`📡 Event captured: ${eventName}`, {
-        event,
-        slot,
-        signature
-      });
+  const setupEventListener = (eventName: "depositEvent" | "withdrawEvent" | "rebalanceEvent" | "allocationUpdateEvent" | "viewEvent") => {
+    const listener = program.addEventListener(eventName, (event, slot, signature) => {
       capturedEvents.push({
         name: eventName,
         event,
@@ -103,9 +98,211 @@ describe("contract", () => {
         signature
       });
     });
-    eventListeners.push(() => program.removeEventListener(listener));
+    eventListeners.push(listener);
     return listener;
   };
+
+  const displayEvents = () => {
+    if (capturedEvents.length === 0) {
+      console.log("\nNo events captured");
+      return;
+    }
+
+    console.log("\n" + "=".repeat(80));
+    console.log("CAPTURED EVENTS SUMMARY");
+    console.log("=".repeat(80));
+    console.log(`Total Events: ${capturedEvents.length}\n`);
+
+    capturedEvents.forEach((eventData, index) => {
+      const eventNumber = `Event #${index + 1}`;
+      console.log("┌" + "─".repeat(78) + "┐");
+      console.log(`│ ${eventNumber.padEnd(76)} │`);
+      console.log("├" + "─".repeat(78) + "┤");
+      
+      // Event Type
+      
+      console.log(`│ Type:  ${eventData.name.padEnd(66)} │`);
+      
+      // Slot & Signature
+      console.log(`│ Slot: ${String(eventData.slot).padEnd(70)} │`);
+      if (eventData.signature) {
+        console.log(`│ Signature: ${String(eventData.signature).substring(0, 60)}... │`);
+      }
+      
+      console.log("├" + "─".repeat(78) + "┤");
+      console.log("│ Event Data:".padEnd(79) + "│");
+      
+      // Format event data based on type
+      if (eventData.name === "depositEvent") {
+        const evt = eventData.event;
+        console.log(`│   User: ${String(evt.user).substring(0, 57)} │`);
+        console.log(`│   Amount: ${String(evt.amount).padEnd(63)} │`);
+        console.log(`│   cUSDC Minted: ${String(evt.cusdcMinted).padEnd(55)} │`);
+      } else if (eventData.name === "withdrawEvent") {
+        const evt = eventData.event;
+        console.log(`│   User: ${String(evt.user).substring(0, 57)} │`);
+        console.log(`│   cUSDC Burned: ${String(evt.cusdcBurned).padEnd(55)} │`);
+        console.log(`│   USDC Returned: ${String(evt.usdcReturned).padEnd(54)} │`);
+      } else if (eventData.name === "rebalanceEvent") {
+        const evt = eventData.event;
+        console.log(`│   JupLend Balance: ${String(evt.juplendBalance).padEnd(52)} │`);
+        console.log(`│   Kamino Balance: ${String(evt.kaminoBalance).padEnd(53)} │`);
+      } else if (eventData.name === "allocationUpdateEvent") {
+        const evt = eventData.event;
+        console.log(`│   JupLend BPS: ${String(evt.juplendBps).padEnd(56)} │`);
+        console.log(`│   Kamino BPS: ${String(evt.kaminoBps).padEnd(57)} │`);
+      } else if (eventData.name === "viewEvent") {
+        const evt = eventData.event;
+        console.log(`│   User: ${String(evt.user).substring(0, 57)} │`);
+        console.log(`│   User Yeild: ${String(evt.userYeild).padEnd(55)} │`);
+      }
+      
+      console.log("└" + "─".repeat(78) + "┘");
+      console.log("");
+    });
+
+    console.log("=".repeat(80) + "\n");
+  };
+
+  const simulateTransaction = async (transaction: VersionedTransaction) => {
+    const simulation = await provider.connection.simulateTransaction(transaction, {
+          commitment: 'confirmed',
+        });
+        
+    console.log("Simulation result:", JSON.stringify(simulation, null, 2));
+        
+    if (simulation.value.err) {
+        console.error("Simulation error:", simulation.value.err);
+        console.log("Simulation logs:");
+        simulation.value.logs?.forEach((log, idx) => console.log(`  ${idx}: ${log}`));
+      throw new Error(`Simulation failed: ${JSON.stringify(simulation.value.err)}`);
+    }
+  }
+
+  const sendTransaction = async (transaction: VersionedTransaction) => {
+
+    try {
+      // await simulateTransaction(transaction);
+
+      const txid = await provider.connection.sendTransaction(transaction, {
+        skipPreflight: false,
+        maxRetries: 3,
+      });
+      
+      await provider.connection.confirmTransaction(txid, 'confirmed');
+      console.log("Transaction confirmed");
+
+      console.log("Your transaction signature", txid);
+    } catch (error) {
+      console.error("Error name:", error.name);
+      console.error("Error message:", error.message);
+      
+      if (error.logs) {
+        console.error("\nTransaction logs:");
+        error.logs.forEach((log, idx) => console.error(`  ${idx}: ${log}`));
+      }
+      
+      throw error;
+    }
+  }
+
+  const buildVersionedTransaction = async (ix: TransactionInstruction): Promise<VersionedTransaction> => {
+
+    const computeBudgetIx = ComputeBudgetProgram.setComputeUnitLimit({
+      units: 1_400_000, // Increase from default 200k to 1.4M
+    });
+
+    const computePriceIx = ComputeBudgetProgram.setComputeUnitPrice({
+      microLamports: 1,
+    });
+
+    const { blockhash } = await provider.connection.getLatestBlockhash();
+    const messageV0 = new TransactionMessage({
+      payerKey: signer.publicKey,
+      recentBlockhash: blockhash,
+      instructions: [computeBudgetIx, computePriceIx, ix],
+    }).compileToV0Message([lookupTableAccount]);
+
+    const transaction = new VersionedTransaction(messageV0);
+
+    transaction.sign([signer]);
+
+    return transaction;
+  }
+
+  const extendLookupTable = async (addressesToAdd: PublicKey[]) => {
+
+    const BATCH_SIZE = 20;
+    for (let i = 0; i < addressesToAdd.length; i += BATCH_SIZE) {
+      const batch = addressesToAdd.slice(i, i + BATCH_SIZE);
+      console.log(`Adding batch ${Math.floor(i / BATCH_SIZE) + 1} with ${batch.length} addresses...`);
+      
+      const extendInstruction = AddressLookupTableProgram.extendLookupTable({
+        payer: signer.publicKey,
+        authority: signer.publicKey,
+        lookupTable: lookupTableAddress,
+        addresses: batch,
+      });
+
+      const extendLookupTableTx = new VersionedTransaction(
+        new TransactionMessage({
+          payerKey: signer.publicKey,
+          recentBlockhash: (await provider.connection.getLatestBlockhash()).blockhash,
+          instructions: [extendInstruction],
+        }).compileToV0Message()
+      );
+      extendLookupTableTx.sign([signer]);
+      const extendTxSig = await provider.connection.sendTransaction(extendLookupTableTx);
+      await provider.connection.confirmTransaction(extendTxSig, 'confirmed');
+      
+      // Small delay between batches
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+
+  }
+
+  const createLookupTable = async (addressesToAdd: PublicKey[]) => {
+
+    // Create Address Lookup Table
+    const slot = await provider.connection.getSlot();
+
+    const [lookupTableInst, lookupTableAddr] = AddressLookupTableProgram.createLookupTable({
+      authority: signer.publicKey,
+      payer: signer.publicKey,
+      recentSlot: slot,
+    });
+
+    lookupTableAddress = lookupTableAddr;
+
+    // Create the lookup table
+    const createLookupTableTx = new VersionedTransaction(
+      new TransactionMessage({
+        payerKey: signer.publicKey,
+        recentBlockhash: (await provider.connection.getLatestBlockhash()).blockhash,
+        instructions: [lookupTableInst],
+      }).compileToV0Message()
+    );
+    createLookupTableTx.sign([signer]);
+    const createTxSig = await provider.connection.sendTransaction(createLookupTableTx);
+    await provider.connection.confirmTransaction(createTxSig, 'confirmed');
+    
+    // Wait for confirmation
+    await new Promise(resolve => setTimeout(resolve, 1000));
+
+    await extendLookupTable(addressesToAdd);
+    
+    
+    
+    await new Promise(resolve => setTimeout(resolve, 2000));
+
+    // Fetch the lookup table account
+    const lookupTableAccountInfo = await provider.connection.getAddressLookupTable(lookupTableAddress);
+    if (lookupTableAccountInfo.value === null) {
+      throw new Error("Failed to fetch lookup table account");
+    }
+    lookupTableAccount = lookupTableAccountInfo.value;
+    console.log(`Lookup table loaded with ${lookupTableAccount.state.addresses.length} addresses`);
+  }
 
 
   before(async ()=> {
@@ -236,16 +433,7 @@ describe("contract", () => {
 
     // airdrop SOL to configPDA
     await provider.connection.requestAirdrop(configPDA, LAMPORTS_PER_SOL * 1000);
-
-    // Create Address Lookup Table
-    const slot = await provider.connection.getSlot();
-    const [lookupTableInst, lookupTableAddr] = AddressLookupTableProgram.createLookupTable({
-      authority: signer.publicKey,
-      payer: signer.publicKey,
-      recentSlot: slot,
-    });
-
-    lookupTableAddress = lookupTableAddr;
+    
 
     // Collect all addresses that need to be in the lookup table
     const addressesToAdd = [
@@ -311,66 +499,9 @@ describe("contract", () => {
       collateralTokenProgram2,
     ];
 
-    // Create the lookup table
-    const createLookupTableTx = new VersionedTransaction(
-      new TransactionMessage({
-        payerKey: signer.publicKey,
-        recentBlockhash: (await provider.connection.getLatestBlockhash()).blockhash,
-        instructions: [lookupTableInst],
-      }).compileToV0Message()
-    );
-    createLookupTableTx.sign([signer]);
-    const createTxSig = await provider.connection.sendTransaction(createLookupTableTx);
-    await provider.connection.confirmTransaction(createTxSig, 'confirmed');
+    await createLookupTable(addressesToAdd);
+
     
-    // Wait for confirmation
-    await new Promise(resolve => setTimeout(resolve, 1000));
-
-    // Extend the lookup table with addresses in batches (max ~20 addresses per transaction)
-    const BATCH_SIZE = 20;
-    for (let i = 0; i < addressesToAdd.length; i += BATCH_SIZE) {
-      const batch = addressesToAdd.slice(i, i + BATCH_SIZE);
-      console.log(`Adding batch ${Math.floor(i / BATCH_SIZE) + 1} with ${batch.length} addresses...`);
-      
-      const extendInstruction = AddressLookupTableProgram.extendLookupTable({
-        payer: signer.publicKey,
-        authority: signer.publicKey,
-        lookupTable: lookupTableAddress,
-        addresses: batch,
-      });
-
-      const extendLookupTableTx = new VersionedTransaction(
-        new TransactionMessage({
-          payerKey: signer.publicKey,
-          recentBlockhash: (await provider.connection.getLatestBlockhash()).blockhash,
-          instructions: [extendInstruction],
-        }).compileToV0Message()
-      );
-      extendLookupTableTx.sign([signer]);
-      const extendTxSig = await provider.connection.sendTransaction(extendLookupTableTx);
-      await provider.connection.confirmTransaction(extendTxSig, 'confirmed');
-      
-      // Small delay between batches
-      await new Promise(resolve => setTimeout(resolve, 500));
-    }
-
-    // Wait for the lookup table to be activated (needs to wait for at least 1 slot)
-    console.log("Waiting for lookup table to be activated...");
-    const currentSlot = await provider.connection.getSlot();
-    let newSlot = currentSlot;
-    while (newSlot <= currentSlot) {
-      await new Promise(resolve => setTimeout(resolve, 400));
-      newSlot = await provider.connection.getSlot();
-    }
-    console.log(`Lookup table activated at slot ${newSlot}`);
-
-    // Fetch the lookup table account
-    const lookupTableAccountInfo = await provider.connection.getAddressLookupTable(lookupTableAddress);
-    if (lookupTableAccountInfo.value === null) {
-      throw new Error("Failed to fetch lookup table account");
-    }
-    lookupTableAccount = lookupTableAccountInfo.value;
-    console.log(`Lookup table loaded with ${lookupTableAccount.state.addresses.length} addresses`);
 
     // 13 accounts
     jupLendingAccounts = [
@@ -601,18 +732,24 @@ describe("contract", () => {
 
   })
   
+  before(async () => {
+    // Set up event listeners for all tests
+    setupEventListener("depositEvent");
+    setupEventListener("withdrawEvent");
+    setupEventListener("rebalanceEvent");
+    setupEventListener("allocationUpdateEvent");
+    setupEventListener("viewEvent");
+  });
+  
   after(async () => {
     // Clean up event listeners
-    eventListeners.forEach(listener => listener());
+    for (const listenerId of eventListeners) {
+      await program.removeEventListener(listenerId);
+    }
   });
  
 
   it("Is initialized!", async () => {
-    setupEventListener("DepositEvent");
-    setupEventListener("WithdrawEvent");
-    setupEventListener("RebalanceEvent");
-    setupEventListener("AllocationUpdateEvent");
-
     const tx = await program.methods.initAggregatorConfig(5000).accountsStrict({
       authority: signer.publicKey,
       usdcMint: usdcMint,
@@ -660,73 +797,9 @@ describe("contract", () => {
       .instruction();
 
     
-    const computeBudgetIx = ComputeBudgetProgram.setComputeUnitLimit({
-      units: 1_400_000, // Increase from default 200k to 1.4M
-    });
+    const transaction = await buildVersionedTransaction(depositIx);
 
-    const computePriceIx = ComputeBudgetProgram.setComputeUnitPrice({
-      microLamports: 1,
-    });
-
-    
-    const { blockhash } = await provider.connection.getLatestBlockhash();
-    const messageV0 = new TransactionMessage({
-      payerKey: signer.publicKey,
-      recentBlockhash: blockhash,
-      instructions: [computeBudgetIx, computePriceIx, depositIx],
-    }).compileToV0Message([lookupTableAccount]);
-
-    const transaction = new VersionedTransaction(messageV0);
-    
-    
-    const serializedTx = transaction.serialize();
-    console.log(`Transaction size: ${serializedTx.length} bytes`);
-    
-    transaction.sign([signer]);
-
-    try {
-      // First simulate the transaction to get detailed logs
-      // const simulation = await provider.connection.simulateTransaction(transaction, {
-      //   commitment: 'confirmed',
-      // });
-      
-      // console.log("Simulation result:", JSON.stringify(simulation, null, 2));
-      
-      // if (simulation.value.err) {
-      //   console.error("Simulation error:", simulation.value.err);
-      //   console.log("Simulation logs:");
-      //   simulation.value.logs?.forEach((log, idx) => console.log(`  ${idx}: ${log}`));
-      //   throw new Error(`Simulation failed: ${JSON.stringify(simulation.value.err)}`);
-      // }
-
-      
-      const txid = await provider.connection.sendTransaction(transaction, {
-        skipPreflight: false,
-        maxRetries: 3,
-      });
-      
-      console.log("Transaction sent:", txid);
-      const confirmation = await provider.connection.confirmTransaction(txid, 'confirmed');
-      console.log("Transaction confirmed:", confirmation);
-
-      console.log("Your transaction signature", txid);
-    } catch (error) {
-      
-      console.error("Error name:", error.name);
-      console.error("Error message:", error.message);
-      
-      if (error.logs) {
-        console.error("\nTransaction logs:");
-        error.logs.forEach((log, idx) => console.error(`  ${idx}: ${log}`));
-      }
-      
-      if (error.err) {
-        console.error("\nError details:", JSON.stringify(error.err, null, 2));
-      }
-      
-      console.error("\nFull error object:", JSON.stringify(error, null, 2));
-      throw error;
-    }
+    await sendTransaction(transaction);
 
     const configJlUSDCBalance = await provider.connection.getTokenAccountBalance(new PublicKey(configJLUSDC));
     console.log(`configJlUSDCBalance: ${configJlUSDCBalance.value.amount}`);
@@ -735,7 +808,7 @@ describe("contract", () => {
     console.log(`userCUSDCBalance: ${userCUSDCBalance.value.amount}`);
 
     const userSharesBalance = await provider.connection.getTokenAccountBalance(new PublicKey(userSharesAta));
-    console.log(`userSharesBalance: ${userSharesBalance.value.amount}`);
+    console.log(`configKUSDCBalance: ${userSharesBalance.value.amount}`);
 
     // JlUSDCBlance > 0
     assert.isTrue(Number(configJlUSDCBalance.value.amount) > 0);
@@ -751,7 +824,7 @@ describe("contract", () => {
       usdcMint: usdcMint,
     }
 
-    const updateConfigIx = await program.methods.updateStrategy(6000) // 50% allocation to Juplend
+    const updateConfigIx = await program.methods.updateStrategy(6000) // 60% allocation to Juplend
       .accountsStrict(accounts)
       .signers([signer])
       .rpc({
@@ -760,6 +833,7 @@ describe("contract", () => {
       });
 
     console.log("Your transaction signature", updateConfigIx);
+    await new Promise(resolve => setTimeout(resolve, 3000));
   })
 
 
@@ -784,68 +858,32 @@ describe("contract", () => {
       ])
       .instruction();
 
-    const computeBudgetIx = ComputeBudgetProgram.setComputeUnitLimit({
-      units: 1_400_000, // Increase from default 200k to 1.4M
-    });
+    const transaction = await buildVersionedTransaction(rebalanceIx);
 
-    const computePriceIx = ComputeBudgetProgram.setComputeUnitPrice({
-      microLamports: 1,
-    });
+    await sendTransaction(transaction);
+  })
 
-    const { blockhash } = await provider.connection.getLatestBlockhash();
-    const messageV0 = new TransactionMessage({
-      payerKey: signer.publicKey,
-      recentBlockhash: blockhash,
-      instructions: [computeBudgetIx, computePriceIx, rebalanceIx],
-    }).compileToV0Message([lookupTableAccount]);
-
-    const transaction = new VersionedTransaction(messageV0);
-
-    transaction.sign([signer]);
-
-    try {
-      // First simulate the transaction to get detailed logs
-      const simulation = await provider.connection.simulateTransaction(transaction, {
-        commitment: 'confirmed',
-      });
-      
-      console.log("Simulation result:", JSON.stringify(simulation, null, 2));
-      
-      if (simulation.value.err) {
-        console.error("Simulation error:", simulation.value.err);
-        console.log("Simulation logs:");
-        simulation.value.logs?.forEach((log, idx) => console.log(`  ${idx}: ${log}`));
-        throw new Error(`Simulation failed: ${JSON.stringify(simulation.value.err)}`);
-      }
-
-      const txid = await provider.connection.sendTransaction(transaction, 
-      {
-        skipPreflight: false,
-        maxRetries: 3,
-      }
-    );
-      
-      console.log("Transaction sent:", txid);
-      const confirmation = await provider.connection.confirmTransaction(txid, 'confirmed');
-      console.log("Transaction confirmed:", confirmation);
-
-      console.log("Your transaction signature", txid);
-    } catch (error) {
-      console.error("Error name:", error.name);
-      console.error("Error message:", error.message);
-      
-      if (error.logs) {
-        console.error("\nTransaction logs:");
-        error.logs.forEach((log, idx) => console.error(`  ${idx}: ${log}`));
-      }
-      
-      if (error.err) {
-        console.error("\nError details:", JSON.stringify(error.err, null, 2));
-      }
-      
-      console.error("\nFull error object:", JSON.stringify(error, null, 2));
-      throw error;
+  it("View", async () => {
+    const accounts = {
+      config: configPDA,
+      authority: signer.publicKey,
+      userCusdc: signerCUSDC,
+      cusdcMint: cusdcMint,
     }
+
+    const viewIx = await program.methods.view()
+      .accountsStrict(accounts)
+      .remainingAccounts([
+        ...jupLendingAccounts,
+        ...kaminoAccounts
+      ])
+      .signers([signer])
+      .instruction();
+      
+      const transaction = await buildVersionedTransaction(viewIx);
+      await sendTransaction(transaction);
+
+
   })
 
   it("Withdraw from Juplend", async () => {
@@ -875,68 +913,9 @@ describe("contract", () => {
       .instruction();
 
 
-      const computeBudgetIx = ComputeBudgetProgram.setComputeUnitLimit({
-        units: 1_400_000, // Increase from default 200k to 1.4M
-      });
-  
-      const computePriceIx = ComputeBudgetProgram.setComputeUnitPrice({
-        microLamports: 1,
-      });
-  
-      
-      const { blockhash } = await provider.connection.getLatestBlockhash();
-      const messageV0 = new TransactionMessage({
-        payerKey: signer.publicKey,
-        recentBlockhash: blockhash,
-        instructions: [computeBudgetIx, computePriceIx, withdrawIx],
-      }).compileToV0Message([lookupTableAccount]);
-  
-      const transaction = new VersionedTransaction(messageV0);
-      
-      // Sign the transaction before simulating
-      transaction.sign([signer]);
+      const transaction = await buildVersionedTransaction(withdrawIx);
 
-      try {
-        // First simulate the transaction to get detailed logs
-        // const simulation = await provider.connection.simulateTransaction(transaction, {
-        //   commitment: 'confirmed',
-        // });
-        
-        // console.log("Simulation result:", JSON.stringify(simulation, null, 2));
-        
-        // if (simulation.value.err) {
-        //   console.error("Simulation error:", simulation.value.err);
-        //   console.log("Simulation logs:");
-        //   simulation.value.logs?.forEach((log, idx) => console.log(`  ${idx}: ${log}`));
-        //   throw new Error(`Simulation failed: ${JSON.stringify(simulation.value.err)}`);
-        // }
-  
-        const txid = await provider.connection.sendTransaction(transaction, {
-          skipPreflight: false,
-          maxRetries: 3,
-        });
-        
-        console.log("Transaction sent:", txid);
-        const confirmation = await provider.connection.confirmTransaction(txid, 'confirmed');
-        console.log("Transaction confirmed:", confirmation);
-  
-        console.log("Your transaction signature", txid);
-      } catch (error) {
-        console.error("Error name:", error.name);
-        console.error("Error message:", error.message);
-        
-        if (error.logs) {
-          console.error("\nTransaction logs:");
-          error.logs.forEach((log, idx) => console.error(`  ${idx}: ${log}`));
-        }
-        
-        if (error.err) {
-          console.error("\nError details:", JSON.stringify(error.err, null, 2));
-        }
-        
-        console.error("\nFull error object:", JSON.stringify(error, null, 2));
-        throw error;
-      }
+      await sendTransaction(transaction);
 
       const configJlUSDCBalance = await provider.connection.getTokenAccountBalance(new PublicKey(configJLUSDC));
       console.log(`configJlUSDCBalance: ${configJlUSDCBalance.value.amount}`);
@@ -949,13 +928,8 @@ describe("contract", () => {
       // Wait for final events to propagate
       await new Promise(resolve => setTimeout(resolve, 3000));
 
-      capturedEvents.forEach((eventData, index) => {
-        console.log(`   Event ${index + 1}: ${eventData.name}`);
-        console.log(`     Data:`, JSON.stringify(eventData.event, null, 2));
-      });
+      displayEvents();
   })
-
-  
 
   
 });

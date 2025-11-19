@@ -12,3 +12,6 @@ pub use rebalance::*;
 
 pub mod update_strategy;
 pub use update_strategy::*;
+
+pub mod view;
+pub use view::*;

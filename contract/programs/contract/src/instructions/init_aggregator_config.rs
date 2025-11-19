@@ -1,7 +1,7 @@
 use anchor_lang::prelude::*;
 use anchor_spl::{ associated_token::AssociatedToken, token_interface::{Mint, TokenAccount, TokenInterface}};
 
-use crate::{errors::AggregatorError, states::aggregator_config::AggregatorConfig};
+use crate::{constants::BPS_BASE, errors::AggregatorError, states::aggregator_config::AggregatorConfig};
 
 
 
@@ -49,7 +49,7 @@ pub struct InitAggregatorConfig<'info> {
 impl<'info> InitAggregatorConfig<'info> {
     pub fn init_aggregator_config(&mut self, juplend_allocation_bps: u16, bumps: InitAggregatorConfigBumps) -> Result<()> {
         
-        require!(juplend_allocation_bps <= 10000, AggregatorError::InvalidAllocation);
+        require!(juplend_allocation_bps <= BPS_BASE, AggregatorError::InvalidAllocation);
 
         let config = &mut self.config;
         config.authority = self.authority.key();
@@ -57,6 +57,7 @@ impl<'info> InitAggregatorConfig<'info> {
         config.cusdc_mint = self.cusdc_mint.key();
         config.vault_usdc = self.vault_usdc.key();
         config.juplend_allocation_bps = juplend_allocation_bps;
+        config.kamino_allocation_bps = BPS_BASE - juplend_allocation_bps;
         config.bump = bumps.config;
         config.total_deposits = 0;
 

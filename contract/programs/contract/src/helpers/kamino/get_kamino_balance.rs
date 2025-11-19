@@ -3,63 +3,52 @@ use anchor_spl::{token_interface::TokenAccount};
 
 use crate::{
     errors::AggregatorError,
-    helpers::kamino_account_reader::{
+    helpers::kamino::kamino_account_reader::{
         read_vault_state_fields, read_vault_allocation, read_reserve_fields,
         vault_offsets,
     },
     states::kamino::{Fraction, FractionExtra},
+    constants::{VAULT_STATE_DISCRIMINATOR, SLOTS_PER_YEAR},
 };
 
-/// Kamino VaultState discriminator
-const VAULT_STATE_DISCRIMINATOR: [u8; 8] = [228, 196, 82, 165, 98, 210, 235, 152];
 
 const INITIAL_COLLATERAL_RATE: Fraction = Fraction::ONE;
 
-/// Slots per year for interest calculation (2 slots/sec * 60 * 60 * 24 * 365)
-const SLOTS_PER_YEAR: u128 = 63_072_000;
+/*
 
-/// Kamino balance calculation using safe byte-offset reading
-///
-/// In Kamino Vaults:
-/// 1. Users deposit tokens and receive shares (kTokens)
-/// 2. The vault invests tokens in reserves (lending pools) which earn interest
-/// 3. The exchange rate (tokens Per Share) increases as interest accrues
-/// 4. User balance = user_shares * tokensPerShare
-///
-/// tokensPerShare = (available + invested - pendingFees) / sharesIssued
-/// where:
-/// - available: tokens in the vault not yet invested
-/// - invested: sum of all tokens invested in reserves (ctokenAllocation / exchangeRate)
-/// - pendingFees: management and performance fees
-/// - sharesIssued: total shares minted to all users
+Kamino balance calculation using safe byte-offset reading
+
+In Kamino Vaults:
+   1. Users deposit tokens and receive shares (kTokens)
+   2. The vault invests tokens in reserves (lending pools) which earn interest
+   3. The exchange rate (tokens Per Share) increases as interest accrues
+   4. User balance = user_shares * tokensPerShare
+
+   tokensPerShare = (available + invested - pendingFees) / sharesIssued
+
+   where:
+   - available: tokens in the vault not yet invested
+   - invested: sum of all tokens invested in reserves (ctokenAllocation / exchangeRate)
+   - pendingFees: management and performance fees
+   - sharesIssued: total shares minted to all users
+*/
+
 pub fn get_kamino_balance<'info>(
     vault_state_account: &'info AccountInfo<'info>,
     user_shares_ktoken: &InterfaceAccount<'info, TokenAccount>,
     reserve_accounts: &[AccountInfo<'info>],
-    current_slot: Option<u64>, // If provided, calculates estimated exchange rates with accrued interest
+    current_slot: Option<u64>,
 ) -> Result<u64> {
-    // Load vault state data
     let vault_data = vault_state_account.try_borrow_data()?;
 
-    // Verify discriminator (first 8 bytes)
     if vault_data.len() < 8 || vault_data[0..8] != VAULT_STATE_DISCRIMINATOR {
         return Err(AggregatorError::InvalidAccountData.into());
     }
 
-    // Read only the fields we need using byte offsets
     let vault_fields = read_vault_state_fields(&vault_data)?;
 
-    // Get user's shares from their token account
     let user_shares = user_shares_ktoken.amount;
-    
-    // msg!("========== RAW VAULT VALUES ==========");
-    // msg!("token_available: {}", vault_fields.token_available);
-    // msg!("shares_issued: {}", vault_fields.shares_issued);
-    // msg!("pending_fees_sf: {}", vault_fields.pending_fees_sf);
-    // msg!("user_shares: {}", user_shares);
-    // msg!("======================================");
 
-    // If no shares issued, return 0
     if vault_fields.shares_issued == 0 {
         return Ok(0);
     }
@@ -71,11 +60,6 @@ pub fn get_kamino_balance<'info>(
         current_slot,
     )?;
 
-    // msg!("Total invested (Fraction): {:?}", total_invested.to_display());
-    // msg!("Total invested (floor): {:?}", total_invested.try_to_floor::<u64>());
-
-    // Calculate tokens per share
-    // tokensPerShare = (available + invested - pendingFees) / sharesIssued
 
     // Get pending_fees (already scaled by 2^60)
     let pending_fees = Fraction::from_bits(vault_fields.pending_fees_sf);
@@ -85,50 +69,37 @@ pub fn get_kamino_balance<'info>(
         .checked_add(total_invested)
         .ok_or(AggregatorError::MathOverflow)?;
     
-    // msg!("total_aum: {}", total_aum.try_to_floor::<u64>().unwrap_or(0));
 
     // Calculate net AUM: total_aum - pending_fees
     let net_aum = total_aum
         .checked_sub(pending_fees)
         .ok_or(AggregatorError::MathOverflow)?;
     
-    // msg!("net_aum: {}", net_aum.try_to_floor::<u64>().unwrap_or(0));
-    // msg!("==============================================");
 
-    // Calculate user balance: user_shares * (net_aum / shares_issued)
-    // Calculate tokens per share first to avoid overflow
-    // msg!("Calculating: {} * (net_aum / {})", user_shares, vault_fields.shares_issued);
-    
     let tokens_per_share = net_aum
         .checked_div(Fraction::from(vault_fields.shares_issued))
         .ok_or(AggregatorError::MathOverflow)?;
     
-    // msg!("tokens_per_share: {:?}", tokens_per_share.to_display());
     
     let user_balance = Fraction::from(user_shares)
         .checked_mul(tokens_per_share)
         .ok_or(AggregatorError::MathOverflow)?;
     
-    // msg!("user_balance (before floor): {:?}", user_balance.to_display());
     
     let final_balance = user_balance.try_to_floor::<u64>().ok_or(AggregatorError::MathOverflow)?;
     
-    // msg!("FINAL user_balance: {}", final_balance);
     
     Ok(final_balance)
 }
 
-/// Calculate the total amount invested in reserves, applying the proper exchange rate from each reserve.
-/// Uses safe byte-offset reading instead of zero-copy deserialization.
+
 fn calculate_total_invested_with_exchange_rate(
     vault_data: &[u8],
     reserve_accounts: &[AccountInfo],
     current_slot: Option<u64>,
 ) -> Result<Fraction> {
     let mut total_invested = Fraction::ZERO;
-    // let mut allocation_count = 0;
 
-    // Iterate through all possible allocations (max 25)
     for i in 0..vault_offsets::MAX_RESERVES {
         let allocation = read_vault_allocation(vault_data, i)?;
         
@@ -142,9 +113,6 @@ fn calculate_total_invested_with_exchange_rate(
             continue;
         }
         
-        // allocation_count += 1;
-        // msg!("Processing allocation #{} at index {}", allocation_count, i);
-
         // Find the corresponding reserve account
         let reserve_account = reserve_accounts
             .iter()
@@ -152,40 +120,27 @@ fn calculate_total_invested_with_exchange_rate(
 
         let exchange_rate = match reserve_account {
             Some(acc) => {
-                // msg!("Reserve {}: Found matching reserve account", i);
                 calculate_collateral_exchange_rate(acc, current_slot)?
             },
             None => {
-                // msg!("Reserve {}: NO matching reserve account - using default rate 1.0", i);
                 INITIAL_COLLATERAL_RATE // Fallback to 1.0 if reserve account not provided
             }
         };
         
-        // msg!("========== RESERVE {} RAW VALUES ==========", i);
-        // msg!("Reserve {}: reserve_pubkey = {}", i, allocation.reserve);
-        // msg!("Reserve {}: ctoken_allocation = {}", i, allocation.ctoken_allocation);
-        // msg!("Reserve {}: exchange_rate_bits = {}", i, exchange_rate.to_bits());
-        // msg!("Reserve {}: exchange_rate_display = {:?}", i, exchange_rate.to_display());
 
         // invested = ctoken_allocation / exchange_rate
         // Note: exchange_rate already includes SCALE_FACTOR_BASE in its calculation
-        // so we don't multiply by it again
+
         let invested_amount = ctoken_allocation_f
             .checked_div(exchange_rate)
             .ok_or(AggregatorError::MathOverflow)?;
         
-        // msg!("Reserve {}: invested_amount = {}", i, invested_amount.try_to_floor::<u64>().unwrap_or(0));
-        // msg!("===========================================");
 
         total_invested = total_invested
             .checked_add(invested_amount)
             .ok_or(AggregatorError::MathOverflow)?;
     }
     
-    // msg!("Total allocations processed: {}", allocation_count);
-    // msg!("========== FINAL CALCULATION VALUES ==========");
-    // msg!("total_invested: {}", total_invested.try_to_floor::<u64>().unwrap_or(0));
-
     Ok(total_invested)
 }
 
@@ -217,47 +172,32 @@ pub fn get_kamino_shares_amount_from_usdc<'info>(
 
 }
 
-/// Calculate collateral exchange rate from a reserve using safe byte-offset reading
-///
-/// Formula from Kamino Reserve:
-/// - If current_slot provided: estimates with compounded interest
-/// - total_supply = available_amount + borrowed_amount_sf - accumulated_protocol_fees_sf
-///                  - accumulated_referrer_fees_sf - pending_referrer_fees_sf
-/// - exchangeRate = mint_total_supply / total_supply (if both non-zero, else 1.0)
-///
-/// All *_sf fields use Fraction type (2^60 scaling)
+/* 
+   Calculate collateral exchange rate from a reserve using safe byte-offset reading
+
+    Formula from Kamino Reserve:
+    - If current_slot provided: estimates with compounded interest
+    - total_supply = ( available_amount + borrowed_amount_sf - accumulated_protocol_fees_sf
+                    - accumulated_referrer_fees_sf - pending_referrer_fees_sf)
+    - exchangeRate = mint_total_supply / total_supply (if both non-zero, else 1.0)
+
+    All *_sf fields use Fraction type (2^60 scaling)
+*/
 fn calculate_collateral_exchange_rate(
     reserve_account: &AccountInfo,
     current_slot: Option<u64>,
 ) -> Result<Fraction> {
     let reserve_data = reserve_account.try_borrow_data()?;
 
-    // Minimum size check
     if reserve_data.len() < 100 {
-        // msg!("Reserve data too small, returning initial rate");
         return Ok(INITIAL_COLLATERAL_RATE);
     }
 
-    // Read only the fields we need using byte offsets
     let reserve = read_reserve_fields(&reserve_data)?;
     
-    // msg!("========== RESERVE ACCOUNT RAW VALUES ==========");
-    // msg!("Reserve account: {}", reserve_account.key());
-    // msg!("available_amount: {}", reserve.available_amount);
-    // msg!("borrowed_amount_sf: {}", reserve.borrowed_amount_sf);
-    // msg!("accumulated_protocol_fees_sf: {}", reserve.accumulated_protocol_fees_sf);
-    // msg!("accumulated_referrer_fees_sf: {}", reserve.accumulated_referrer_fees_sf);
-    // msg!("pending_referrer_fees_sf: {}", reserve.pending_referrer_fees_sf);
-    // msg!("mint_total_supply: {}", reserve.mint_total_supply);
-    // msg!("last_update_slot: {}", reserve.last_update_slot);
-    // if let Some(slot) = current_slot {
-    //     msg!("current_slot: {}", slot);
-    // }
-    // msg!("===============================================");
 
     let mint_total_supply = Fraction::from(reserve.mint_total_supply);
 
-    // Calculate total supply (with or without estimated interest)
     let total_supply = if let Some(slot) = current_slot {
         // Calculate estimated total supply with compounded interest
         calculate_estimated_total_supply(&reserve, slot)?
@@ -266,23 +206,16 @@ fn calculate_collateral_exchange_rate(
         calculate_total_supply(&reserve)?
     };
     
-    // msg!("total_supply (calculated): {}", total_supply.try_to_floor::<u64>().unwrap_or(0));
-
     // If either is zero, return initial rate (1.0)
     if mint_total_supply == Fraction::ZERO || total_supply == Fraction::ZERO {
-        // msg!("mint_total_supply or total_supply is ZERO, returning initial rate 1.0");
         return Ok(INITIAL_COLLATERAL_RATE);
     }
 
     // Calculate exchange rate: mintTotalSupply / totalSupply
-    // Note: We don't multiply by SCALE_FACTOR_BASE because Fraction handles scaling internally
     let exchange_rate = mint_total_supply
         .checked_div(total_supply)
         .ok_or(AggregatorError::MathOverflow)?;
     
-    // msg!("FINAL exchange_rate_bits: {}", exchange_rate.to_bits());
-    // msg!("FINAL exchange_rate_display: {:?}", exchange_rate.to_display());
-
     Ok(exchange_rate)
 }
 
@@ -311,7 +244,6 @@ fn calculate_total_supply(
 }
 
 /// Calculate estimated total supply with compounded interest
-/// This implements the logic from KaminoReserve.getEstimatedTotalSupply()
 fn calculate_estimated_total_supply(
     reserve: &crate::helpers::kamino_account_reader::ReserveFields,
     current_slot: u64
@@ -327,9 +259,11 @@ fn calculate_estimated_total_supply(
     let (new_debt, new_acc_protocol_fees, pending_referral_fees) =
         compound_interest(reserve, slots_elapsed)?;
 
-    // Calculate estimated total supply:
-    // total_supply = available_amount + new_debt - new_acc_protocol_fees
-    //                - accumulated_referrer_fees - pending_referral_fees
+    /*
+    Calculate estimated total supply:
+    total_supply = available_amount + new_debt - new_acc_protocol_fees
+                   - accumulated_referrer_fees - pending_referral_fees
+    */
     let available_amount = Fraction::from(reserve.available_amount);
     let accumulated_referrer_fees = Fraction::from_bits(reserve.accumulated_referrer_fees_sf);
 
@@ -347,7 +281,6 @@ fn calculate_estimated_total_supply(
 }
 
 /// Compound interest calculation to estimate new debt and fees
-/// Implements the logic from KaminoReserve.compoundInterest()
 fn compound_interest(
     reserve: &crate::helpers::kamino_account_reader::ReserveFields,
     slots_elapsed: u64,
@@ -358,9 +291,7 @@ fn compound_interest(
     let protocol_take_rate = Fraction::from_percent(reserve.protocol_take_rate_pct as u64);
     let fixed_host_interest_rate = Fraction::from_bps(reserve.host_fixed_interest_rate_bps as u64);
 
-    // For now, use simplified interest calculation
-    // TODO: Implement full borrow curve logic if needed
-    // We'll approximate with fixed rate for now
+    
     
     let approximate_borrow_rate = Fraction::from_bps(500); // ~5% APY as placeholder
 
@@ -424,7 +355,6 @@ fn compound_interest(
 }
 
 /// Approximate compounded interest over elapsed slots
-/// Implements the Taylor series approximation from Kamino
 fn approximate_compounded_interest(rate: Fraction, elapsed_slots: u64) -> Result<Fraction> {
     let base = rate
         .checked_div(Fraction::from_num(SLOTS_PER_YEAR))
@@ -454,10 +384,10 @@ fn approximate_compounded_interest(rate: Fraction, elapsed_slots: u64) -> Result
         _ => {}
     }
 
-    // Taylor series approximation for larger elapsed_slots:
-    // (1 + base)^elapsed_slots ≈ 1 + base*elapsed_slots + (base^2 * elapsed_slots * (elapsed_slots-1))/2
-    //                              + (base^3 * elapsed_slots * (elapsed_slots-1) * (elapsed_slots-2))/6
-
+    /*Taylor series approximation for larger elapsed_slots:
+    (1 + base)^elapsed_slots ≈ 1 + base*elapsed_slots + (base^2 * elapsed_slots * (elapsed_slots-1))/2
+                                 + (base^3 * elapsed_slots * (elapsed_slots-1) * (elapsed_slots-2))/6
+    */
     let exp = elapsed_slots;
     let exp_minus_one = exp.saturating_sub(1);
     let exp_minus_two = exp.saturating_sub(2);

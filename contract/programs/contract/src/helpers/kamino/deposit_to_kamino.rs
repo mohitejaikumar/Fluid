@@ -388,6 +388,9 @@ impl<'info> KaminoVault<'info> {
         self.deposit_to_kamino(amount, config_bump)?;
         
         // Step 3: Stake in farm if vault has one
+        /*
+          we have not did kamino farm staking but this implement is here for future use
+         */
         // self.stake_shares_in_farm(u64::MAX, config_bump)?;
         
         Ok(())

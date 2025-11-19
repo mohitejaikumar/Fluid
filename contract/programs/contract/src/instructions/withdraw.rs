@@ -65,7 +65,7 @@ impl<'info> Withdraw<'info> {
 
         let config = &self.config;
 
-        // TODO: Get total USDC in JupLend and Kamino combined
+        // Get total USDC in all protocols combined
         let usdc_in_all_protocol = calculate_total_asset_balance(remaining_accounts)?;
         let total_usdc_in_protocols_combined: u64 = usdc_in_all_protocol
             .iter()

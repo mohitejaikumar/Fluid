@@ -1,7 +1,7 @@
 use anchor_lang::prelude::{instruction::Instruction, program::invoke_signed, *};
 use anchor_spl::{ token::{CloseAccount, close_account}, token_interface::TokenAccount};
 
-use crate::{errors::AggregatorError, helpers::deposit_to_kamino::KaminoVault, states::ReserveWithdrawAccounts};
+use crate::{errors::AggregatorError, helpers::{deposit_to_kamino::KaminoVault, kamino::get_kamino_balance::get_kamino_shares_amount_from_usdc}, states::ReserveWithdrawAccounts};
 
 
 
@@ -16,32 +16,28 @@ fn get_farm_withdraw_unstaked_discriminator() -> Vec<u8> {
 }
 
 fn get_withdraw_discriminator() -> Vec<u8> {
-    // sha256("global:withdraw")[0..8] - for vaults WITH allocations
+    // sha256("global:withdraw")[0..8]
     vec![183, 18, 70, 156, 148, 109, 161, 34]
 }
 
 fn get_withdraw_from_available_discriminator() -> Vec<u8> {
-    // sha256("global:withdrawFromAvailable")[0..8] - for vaults WITHOUT allocations
+    // sha256("global:withdrawFromAvailable")[0..8]
     vec![19, 131, 112, 155, 170, 220, 34, 57]
 }
 
 
 
 
-
-
-
 impl<'info> KaminoVault<'info> {
     
-   
 
-    
     fn vault_has_allocations(&self) -> bool {
         // If reserve_accounts is not empty, vault has allocations
         !self.reserve_accounts.is_empty()
     }
 
-   
+    /// we have not did kamino farm staking but this implement is here for future use
+    #[allow(dead_code)]
     fn unstake_from_farm(&self, shares_amount: u64, config_bump: u8) -> Result<()> {
         msg!("Unstaking {} shares from farm", shares_amount);
         
@@ -79,7 +75,8 @@ impl<'info> KaminoVault<'info> {
         Ok(())
     }
 
-  
+    /// we have not did kamino farm staking but this implement is here for future use
+    #[allow(dead_code)]
     fn withdraw_unstaked_from_farm(&self, config_bump: u8) -> Result<()> {
         msg!("Withdrawing unstaked deposits from farm");
         
@@ -330,7 +327,7 @@ impl<'info> KaminoVault<'info> {
   
     pub fn execute_complete_withdraw(
         &self,
-        user_shares_ata: InterfaceAccount<'info, TokenAccount>,
+        user_shares_ata: &InterfaceAccount<'info, TokenAccount>,
         shares_amount: u64,
         config_bump: u8,
     ) -> Result<()> {
@@ -340,6 +337,8 @@ impl<'info> KaminoVault<'info> {
             &user_shares_ata.to_account_info(),
             &self.config.to_account_info(),
         )?;
+
+        // we have not did kamino farm staking but this implement is here for future use
         
         // if self.has_farm() {
         //     let shares_in_ata = user_shares_ata.amount;
@@ -396,6 +395,34 @@ impl<'info> KaminoVault<'info> {
         }
 
         msg!("Kamino Vault withdrawal completed successfully");
+        Ok(())
+    }
+
+
+    pub fn withdraw_from_kamino_by_shares(
+        &self,
+        kamino_user_shares_ata_account_info: &InterfaceAccount<'info, TokenAccount>,
+        kamino_vault_state_account_info: &'info AccountInfo<'info>,
+        reserve_accounts: &Vec<AccountInfo<'info>>,
+        current_slot: u64,
+        usdc_to_withdraw: u64,
+        config_bump: u8,
+    ) -> Result<()> {
+        // calculate the share_amount_from_usdc for kamino
+        let shares_amount = get_kamino_shares_amount_from_usdc(
+            usdc_to_withdraw,
+            kamino_vault_state_account_info,
+            &kamino_user_shares_ata_account_info,
+            reserve_accounts,
+            Some(current_slot),
+        )?;
+    
+        self.execute_complete_withdraw(
+            kamino_user_shares_ata_account_info,
+            shares_amount,
+            config_bump,
+        )?;
+    
         Ok(())
     }
 }

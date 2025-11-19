@@ -43,5 +43,10 @@ pub mod contract {
         ctx.accounts.update_strategy(new_juplend_bps)?;
         Ok(())
     }
+
+    pub fn view<'info>(ctx: Context<'_, '_, 'info, 'info, View<'info>>) -> Result<()> {
+        ctx.accounts.view(ctx.remaining_accounts)?;
+        Ok(())
+    }
 }
 

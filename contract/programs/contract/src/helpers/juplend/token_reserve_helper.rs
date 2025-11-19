@@ -23,10 +23,8 @@ pub mod offset {
     pub const INTERACTING_PROTOCOL: usize = TOTAL_CLAIM_AMOUNT + 8; // 136
     pub const INTERACTING_TIMESTAMP: usize = INTERACTING_PROTOCOL + 32; // 168
     pub const INTERACTING_BALANCE: usize = INTERACTING_TIMESTAMP + 8; // 176
-    // final length = INTERACTING_BALANCE + 8 = 184
 }
 
-/// Simple buffer length check for read operations
 #[inline]
 fn check_len(buf: &[u8]) {
     assert!(
@@ -37,7 +35,6 @@ fn check_len(buf: &[u8]) {
     );
 }
 
-/// Read helpers (little-endian) - Read-only operations for external PDAs
 #[inline]
 fn read_u64_from_bytes(buf: &[u8], offset: usize) -> u64 {
     let mut arr = [0u8; 8];
@@ -60,9 +57,6 @@ fn read_pubkey_from_bytes(buf: &[u8], offset: usize) -> Pubkey {
 }
 
 
-// Read-only getters for JupLend TokenReserve fields
-// These are external PDAs we only read from, never write to
-//
 pub fn get_mint(buf: &[u8]) -> Pubkey {
     check_len(buf);
     read_pubkey_from_bytes(buf, offset::MINT)

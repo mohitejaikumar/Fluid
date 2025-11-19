@@ -1,7 +1,7 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token_interface::{Mint, TokenAccount, TokenInterface};
 
-use crate::{constants::BPS_BASE, errors::AggregatorError, events::RebalanceEvent, helpers::{deposit_to_juplend::Juplend, deposit_to_kamino::KaminoVault, get_kamino_balance::get_kamino_shares_amount_from_usdc}, states::aggregator_config::AggregatorConfig};
+use crate::{constants::{BPS_BASE, MIN_OPERATE_AMOUNT}, errors::AggregatorError, events::RebalanceEvent, helpers::{deposit_to_juplend::Juplend, deposit_to_kamino::KaminoVault, get_kamino_balance::get_kamino_shares_amount_from_usdc}, states::aggregator_config::AggregatorConfig};
 
 
 
@@ -19,12 +19,7 @@ pub fn rebalance_allocation<'info>(
     rent: &AccountInfo<'info>,
 ) -> Result<()> {
         
-    // TODO: Implement
-    // 1. Calculate allocation split based on config.juplend_allocation_bps
-    // 2. Call deposit_to_juplend for JupLend portion
-    // 3. Call deposit_to_kamino for Kamino portion
-
-    // TODO: 
+    
     let mut total_usdc_in_all_protocols_combined  = usdc_in_all_protocol
             .iter()
             .try_fold(0u64, |acc, x| acc.checked_add(*x))
@@ -41,7 +36,9 @@ pub fn rebalance_allocation<'info>(
             .ok_or(AggregatorError::MathOverflow)?;
 
     let target_kamino_balance = total_usdc_in_all_protocols_combined
-            .checked_sub(target_juplend_balance)
+            .checked_mul(config.kamino_allocation_bps as u64)
+            .ok_or(AggregatorError::MathOverflow)?
+            .checked_div(BPS_BASE as u64)
             .ok_or(AggregatorError::MathOverflow)?;
 
     
@@ -108,7 +105,6 @@ fn execute_rebalance<'info>(
     // Step 1: If there's USDC in vault, deposit it to Juplend first
     // Only deposit if amount is meaningful (> 1000 lamports to avoid dust)
     let vault_balance = vault_usdc.amount;
-    const MIN_OPERATE_AMOUNT: u64 = 1000; // Minimum 1000 lamports to operate
     
     if vault_balance >= MIN_OPERATE_AMOUNT {
         msg!("Depositing to Juplend: {}", vault_balance);
@@ -126,17 +122,16 @@ fn execute_rebalance<'info>(
     msg!("New Juplend balance: {}", new_juplend_balance);
     msg!("New Kamino balance: {}", new_kamino_balance);
     
+
     // Step 4: Determine which protocol has excess and rebalance
     // Only rebalance if the amount to move is significant
-    const MIN_REBALANCE_AMOUNT: u64 = 1000; // Minimum 1000 lamports to rebalance
-    
     if new_juplend_balance > target_juplend {
         // Juplend has excess, move to Kamino
         let amount_to_move = new_juplend_balance
             .checked_sub(target_juplend)
             .ok_or(AggregatorError::MathOverflow)?;
 
-        if amount_to_move < MIN_REBALANCE_AMOUNT {
+        if amount_to_move < MIN_OPERATE_AMOUNT {
             msg!("Amount to move from Juplend ({}) is too small, skipping rebalance", amount_to_move);
             return Ok(());
         }
@@ -154,7 +149,7 @@ fn execute_rebalance<'info>(
             .checked_sub(target_kamino)
             .ok_or(AggregatorError::MathOverflow)?;
         
-        if amount_to_move < MIN_REBALANCE_AMOUNT {
+        if amount_to_move < MIN_OPERATE_AMOUNT {
             msg!("Amount to move from Kamino ({}) is too small, skipping rebalance", amount_to_move);
             return Ok(());
         }
@@ -180,15 +175,16 @@ fn execute_rebalance<'info>(
 
         msg!("Withdrawing from Kamino: {}", shares_amount);
         msg!("Kamino vault usdc amount before withdraw: {}", vault_usdc.amount);
+
         kamino_accounts.execute_complete_withdraw(
-            kamino_user_shares_ata_account_info,
+            &kamino_user_shares_ata_account_info,
             shares_amount,
             config_bump,
         )?;
 
         vault_usdc.reload()?;
-        msg!("Kamino vault usdc amount after reload: {}", vault_usdc.amount);
 
+        msg!("Kamino vault usdc amount after reload: {}", vault_usdc.amount);
         msg!("Depositing to Juplend: {}", vault_usdc.amount);
         juplend_accounts.deposit_to_juplend(vault_usdc.amount, config_bump)?;
     }

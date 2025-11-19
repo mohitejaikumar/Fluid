@@ -63,7 +63,6 @@ impl<'info> Deposit<'info> {
 
         require!(amount > 0, AggregatorError::InvalidAmount);
         
-        // Log remaining accounts for debugging
         msg!("Received {} remaining accounts", remaining_accounts.len());
         
         msg!("Transferring USDC to vault");
@@ -86,7 +85,7 @@ impl<'info> Deposit<'info> {
         // Reload vault_usdc account to get updated balance after transfer
         self.vault_usdc.reload()?;
         
-        // Get total USDC in JupLend and Kamino combined
+        // Get total USDC in all protocols combined
         let usdc_in_all_protocol = calculate_total_asset_balance(remaining_accounts)?;
         let total_usdc_in_protocols_combined: u64 = usdc_in_all_protocol
             .iter()

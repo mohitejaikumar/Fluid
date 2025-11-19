@@ -1,7 +1,7 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token_interface::{Mint, TokenAccount, TokenInterface};
 
-use crate::{errors::AggregatorError, helpers::{calculate_total_asset_balance::calculate_total_asset_balance, deposit_to_juplend::Juplend, deposit_to_kamino::KaminoVault, get_kamino_balance::get_kamino_shares_amount_from_usdc}, states::{AggregatorConfig, ReserveWithdrawAccounts}};
+use crate::{errors::AggregatorError, helpers::{calculate_total_asset_balance::calculate_total_asset_balance, deposit_to_juplend::Juplend, deposit_to_kamino::KaminoVault}, states::{AggregatorConfig, ReserveWithdrawAccounts}};
 
 
 
@@ -20,7 +20,6 @@ pub fn withdraw_from_protocols<'c, 'info>(
     rent: AccountInfo<'info>,
 ) -> Result<()>
 {
-    // TODO: Implement
     // 1. withdraw from JupLend first (in juplend we pass usdc_amount)
     // 2. If still insufficient, withdraw from Kamino (we pass shares_amount)
 
@@ -66,8 +65,6 @@ pub fn withdraw_from_protocols<'c, 'info>(
     let temp_reserve_accounts : Vec<ReserveWithdrawAccounts<'info>> = kamino_accounts.reserve_accounts.clone();
     let reserve_accounts: Vec<AccountInfo<'info>> = temp_reserve_accounts.iter().map(|x| x.reserve.clone()).collect();
 
-    // calculate the share_amount_from_usdc for kamino
-
     let current_slot = Clock::get()?.slot;
 
 
@@ -75,36 +72,26 @@ pub fn withdraw_from_protocols<'c, 'info>(
         juplend_accounts.withdraw_from_juplend(usdc_to_withdraw, config.bump)?;
     } else {
         if kamino_balance >=usdc_to_withdraw {
-            
-
-            let shares_amount = get_kamino_shares_amount_from_usdc(
-                usdc_to_withdraw,
-                kamino_vault_state_account_info,
+        
+            kamino_accounts.withdraw_from_kamino_by_shares(
                 &kamino_user_shares_ata_account_info,
-                reserve_accounts.as_slice(),
-                Some(current_slot),
-            )?;
-
-            kamino_accounts.execute_complete_withdraw(
-                kamino_user_shares_ata_account_info,
-                shares_amount,
+                kamino_vault_state_account_info,
+                &reserve_accounts,
+                current_slot,
+                usdc_to_withdraw,
                 config.bump,
             )?;
         }
         else {
-            // withdraw from both juplend and kamino
+            
             juplend_accounts.withdraw_from_juplend(juplend_balance, config.bump)?;
             
-            let shares_amount = get_kamino_shares_amount_from_usdc(
-                usdc_to_withdraw - juplend_balance,
-                kamino_vault_state_account_info,
+            kamino_accounts.withdraw_from_kamino_by_shares(
                 &kamino_user_shares_ata_account_info,
+                kamino_vault_state_account_info,
                 &reserve_accounts,
-                Some(current_slot),
-            )?;
-            kamino_accounts.execute_complete_withdraw(
-                kamino_user_shares_ata_account_info,
-                shares_amount,
+                current_slot,
+                usdc_to_withdraw - juplend_balance,
                 config.bump,
             )?;
         }
@@ -112,4 +99,5 @@ pub fn withdraw_from_protocols<'c, 'info>(
 
     Ok(())
 }
+
 

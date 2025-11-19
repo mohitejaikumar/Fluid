@@ -35,38 +35,21 @@ pub struct BigFractionBytes {
 pub struct Reserve {
 
     pub version: u64,
-
-
     pub last_update: LastUpdate,
-
-
     pub lending_market: Pubkey,
-
     pub farm_collateral: Pubkey,
     pub farm_debt: Pubkey,
 
-
     pub liquidity: ReserveLiquidity,
-
     pub reserve_liquidity_padding: [u64; 150],
-
-
     pub collateral: ReserveCollateral,
-
     pub reserve_collateral_padding: [u64; 150],
 
-
     pub config: ReserveConfig,
-
-    
     pub config_padding: [u64; 116],
-
     pub borrowed_amount_outside_elevation_group: u64,
 
-
-
     pub borrowed_amounts_against_this_reserve_in_elevation_groups: [u64; 32],
-
     pub padding: [u64; 207],
 }
 
@@ -91,8 +74,6 @@ pub struct ReserveLiquidity {
     pub market_price_last_updated_ts: u64,
 
     pub mint_decimals: u64,
-
-
 
     pub deposit_limit_crossed_timestamp: u64,
 
@@ -144,8 +125,6 @@ pub struct ReserveConfig {
     pub host_fixed_interest_rate_bps: u16,
 
     pub min_deleveraging_bonus_bps: u16,
-
-
 
     pub block_ctoken_usage: u8,
 

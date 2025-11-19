@@ -60,7 +60,6 @@ pub fn get_rewards_rate<'info>(
     msg!("Yearly reward: {}", rewards_rate_model.yearly_reward);
     
     // Calculate rate = (yearly_reward * EXCHANGE_PRICES_PRECISION) / total_assets
-    // To avoid overflow, check if the multiplication would overflow
     let yearly_reward_u128 = rewards_rate_model.yearly_reward as u128;
     
     let rate = yearly_reward_u128
@@ -121,9 +120,6 @@ pub fn get_new_exchange_price<'info>(
 
     let current_timestamp = Clock::get()?.unix_timestamp as u128;
 
-    // msg!("Current timestamp: {}", current_timestamp);
-    // msg!("Last update time: {}", last_update_time);
-    // msg!("Rewards rate: {}", rewards_rate.rate);
 
     let mut total_return_percent = rewards_rate.rate
                                 .checked_mul(
@@ -177,8 +173,6 @@ pub fn get_new_exchange_price<'info>(
             .checked_sub(delta_percent)
             .unwrap_or(0); // If the loss is greater than rewards, set to 0
     }
-
-    // msg!("Total return percent: {}", total_return_percent);
 
     let new_token_exchange_price = old_token_exchange_price.checked_add(
         old_token_exchange_price.checked_mul(total_return_percent).ok_or(AggregatorError::MathOverflow)?

@@ -26,3 +26,9 @@ pub struct AllocationUpdateEvent {
     pub juplend_bps: u16,
     pub kamino_bps: u16,
 }
+
+#[event]
+pub struct ViewEvent {
+    pub user: Pubkey,
+    pub user_yeild: u64,
+}
