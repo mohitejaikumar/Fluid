@@ -190,6 +190,7 @@ Fluid/
 - **Automatic Rebalancing**: Optimizes fund allocation across protocols
 - **Share-based System**: Users receive shares representing their proportional ownership
 - **Flexible Strategies**: Configurable allocation strategies for different risk profiles
+- **Decoupled Implementation**: Easily you can integrate new Protocol with minimal change in codebase
 
 
 
