@@ -349,34 +349,6 @@ impl<'info> KaminoVault<'info> {
             &self.config.to_account_info(),
         )?;
 
-        // we have kamino farm staking but this implement is here for future use
-        
-        if self.has_farm() {
-            let shares_in_ata = user_shares_ata.amount;
-            msg!("Vault has farm. Shares in ATA: {}", shares_in_ata);
-            
-            // Check if we need to unstake (not enough shares in ATA)
-            if shares_amount > shares_in_ata {
-                msg!("Need to unstake from farm");
-                
-                
-                let amount_to_unstake = if shares_amount == u64::MAX {
-                    u64::MAX
-                } else {
-                    shares_amount.saturating_sub(shares_in_ata)
-                };
-                
-                msg!("Unstaking {} shares", amount_to_unstake);
-                
-                
-                self.unstake_from_farm(amount_to_unstake, config_bump)?;
-                self.withdraw_unstaked_from_farm(config_bump)?;
-            } else {
-                msg!("Enough shares in ATA, no need to unstake");
-            }
-        } else {
-            msg!("Vault has no farm, skipping farm operations");
-        }
 
         self.create_shares_ata(
             &self.token_mint.to_account_info(),
