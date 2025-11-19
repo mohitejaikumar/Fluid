@@ -373,8 +373,6 @@ impl<'info> KaminoVault<'info> {
             return Ok(());
         }
 
-        msg!("Vault has farm, staking shares...");
-
         let init_result = self.initialize_user_farm_state(config_bump);
         match init_result {
             Ok(_) => msg!("User farm state initialized"),

@@ -824,7 +824,7 @@ describe("contract", () => {
       usdcMint: usdcMint,
     }
 
-    const updateConfigIx = await program.methods.updateStrategy(6000) // 60% allocation to Juplend
+    const updateConfigIx = await program.methods.updateStrategy(10000) // 100% allocation to Juplend
       .accountsStrict(accounts)
       .signers([signer])
       .rpc({

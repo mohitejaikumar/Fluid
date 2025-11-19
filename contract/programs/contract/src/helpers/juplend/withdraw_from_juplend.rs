@@ -12,7 +12,7 @@ fn get_withdraw_discriminator() -> Vec<u8> {
 
 impl<'info> Juplend<'info> {
     pub fn withdraw_from_juplend(&self, usdc_amount: u64, config_bump: u8) -> Result<()> {
-        // TODO: Implement CPI to JupLend Earn
+        
         let mut instruction_data = get_withdraw_discriminator();
         instruction_data.extend_from_slice(&usdc_amount.to_le_bytes());
 

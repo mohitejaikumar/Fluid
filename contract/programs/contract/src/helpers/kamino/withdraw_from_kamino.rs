@@ -32,11 +32,10 @@ impl<'info> KaminoVault<'info> {
     
 
     fn vault_has_allocations(&self) -> bool {
-        // If reserve_accounts is not empty, vault has allocations
         !self.reserve_accounts.is_empty()
     }
 
-    /// we have not did kamino farm staking but this implement is here for future use
+    /// we have kamino farm staking but this implement is here for future use
     #[allow(dead_code)]
     fn unstake_from_farm(&self, shares_amount: u64, config_bump: u8) -> Result<()> {
         msg!("Unstaking {} shares from farm", shares_amount);
@@ -78,7 +77,7 @@ impl<'info> KaminoVault<'info> {
         Ok(())
     }
 
-    /// we have not did kamino farm staking but this implement is here for future use
+    /// we have kamino farm staking but this implement is here for future use
     #[allow(dead_code)]
     fn withdraw_unstaked_from_farm(&self, config_bump: u8) -> Result<()> {
         msg!("Withdrawing unstaked deposits from farm");
@@ -350,34 +349,34 @@ impl<'info> KaminoVault<'info> {
             &self.config.to_account_info(),
         )?;
 
-        // we have not did kamino farm staking but this implement is here for future use
+        // we have kamino farm staking but this implement is here for future use
         
-        // if self.has_farm() {
-        //     let shares_in_ata = user_shares_ata.amount;
-        //     msg!("Vault has farm. Shares in ATA: {}", shares_in_ata);
+        if self.has_farm() {
+            let shares_in_ata = user_shares_ata.amount;
+            msg!("Vault has farm. Shares in ATA: {}", shares_in_ata);
             
-        //     // Check if we need to unstake (not enough shares in ATA)
-        //     if shares_amount > shares_in_ata {
-        //         msg!("Need to unstake from farm");
+            // Check if we need to unstake (not enough shares in ATA)
+            if shares_amount > shares_in_ata {
+                msg!("Need to unstake from farm");
                 
                 
-        //         let amount_to_unstake = if shares_amount == u64::MAX {
-        //             u64::MAX
-        //         } else {
-        //             shares_amount.saturating_sub(shares_in_ata)
-        //         };
+                let amount_to_unstake = if shares_amount == u64::MAX {
+                    u64::MAX
+                } else {
+                    shares_amount.saturating_sub(shares_in_ata)
+                };
                 
-        //         msg!("Unstaking {} shares", amount_to_unstake);
+                msg!("Unstaking {} shares", amount_to_unstake);
                 
                 
-        //         self.unstake_from_farm(amount_to_unstake, config_bump)?;
-        //         self.withdraw_unstaked_from_farm(config_bump)?;
-        //     } else {
-        //         msg!("Enough shares in ATA, no need to unstake");
-        //     }
-        // } else {
-        //     msg!("Vault has no farm, skipping farm operations");
-        // }
+                self.unstake_from_farm(amount_to_unstake, config_bump)?;
+                self.withdraw_unstaked_from_farm(config_bump)?;
+            } else {
+                msg!("Enough shares in ATA, no need to unstake");
+            }
+        } else {
+            msg!("Vault has no farm, skipping farm operations");
+        }
 
         self.create_shares_ata(
             &self.token_mint.to_account_info(),
@@ -388,16 +387,15 @@ impl<'info> KaminoVault<'info> {
         
         let has_allocations = self.vault_has_allocations();
         if has_allocations {
-            msg!("Vault has allocations - using withdraw with reserves");
+            
             self.withdraw_with_allocations(shares_amount, config_bump)?;
         } else {
-            msg!("Vault has no allocations - using withdrawFromAvailable");
+            
             self.withdraw_from_available(shares_amount, config_bump)?;
         }
 
         
         let remaining_shares = user_shares_ata.amount;
-        msg!("Remaining shares after withdraw: {}", remaining_shares);
         
         if remaining_shares == 0 {
             msg!("All shares burned, closing shares ATA");

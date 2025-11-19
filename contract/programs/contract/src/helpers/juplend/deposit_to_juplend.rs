@@ -98,14 +98,9 @@ impl<'info> Juplend<'info> {
     }
 
     pub fn deposit_to_juplend(&self, amount: u64, config_bump: u8) -> Result<()> {
-        // TODO: Implement CPI to JupLend Earn
 
         let mut instruction_data = get_deposit_discriminator();
         instruction_data.extend_from_slice(&amount.to_le_bytes());
-
-        msg!("asset token account: {}", self.asset_token_account.key());
-        msg!("ftoken account: {}", self.ftoken_account.key());
-        msg!("mint: {}", self.mint.key());
 
         let account_metas = vec![
             // signer (mutable, signer)

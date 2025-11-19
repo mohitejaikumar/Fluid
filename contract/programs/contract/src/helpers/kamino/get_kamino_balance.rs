@@ -53,7 +53,6 @@ pub fn get_kamino_balance<'info>(
         return Ok(0);
     }
 
-    // Calculate total invested amount from all reserve allocations
     let total_invested = calculate_total_invested_with_exchange_rate(
         &vault_data,
         reserve_accounts,
@@ -113,7 +112,6 @@ fn calculate_total_invested_with_exchange_rate(
             continue;
         }
         
-        // Find the corresponding reserve account
         let reserve_account = reserve_accounts
             .iter()
             .find(|acc| acc.key() == allocation.reserve);
@@ -123,13 +121,12 @@ fn calculate_total_invested_with_exchange_rate(
                 calculate_collateral_exchange_rate(acc, current_slot)?
             },
             None => {
-                INITIAL_COLLATERAL_RATE // Fallback to 1.0 if reserve account not provided
+                INITIAL_COLLATERAL_RATE
             }
         };
         
 
         // invested = ctoken_allocation / exchange_rate
-        // Note: exchange_rate already includes SCALE_FACTOR_BASE in its calculation
 
         let invested_amount = ctoken_allocation_f
             .checked_div(exchange_rate)
@@ -219,7 +216,7 @@ fn calculate_collateral_exchange_rate(
     Ok(exchange_rate)
 }
 
-/// Calculate stale total supply from reserve (without compounding interest)
+
 fn calculate_total_supply(
     reserve: &crate::helpers::kamino_account_reader::ReserveFields
 ) -> Result<Fraction> {
@@ -243,19 +240,17 @@ fn calculate_total_supply(
     Ok(total_supply)
 }
 
-/// Calculate estimated total supply with compounded interest
+
 fn calculate_estimated_total_supply(
     reserve: &crate::helpers::kamino_account_reader::ReserveFields,
     current_slot: u64
 ) -> Result<Fraction> {
     let slots_elapsed = current_slot.saturating_sub(reserve.last_update_slot);
 
-    // If no slots elapsed, return stale total supply
     if slots_elapsed == 0 {
         return calculate_total_supply(reserve);
     }
 
-    // Compound interest to estimate new debt
     let (new_debt, new_acc_protocol_fees, pending_referral_fees) =
         compound_interest(reserve, slots_elapsed)?;
 
@@ -280,7 +275,7 @@ fn calculate_estimated_total_supply(
     Ok(total_supply)
 }
 
-/// Compound interest calculation to estimate new debt and fees
+
 fn compound_interest(
     reserve: &crate::helpers::kamino_account_reader::ReserveFields,
     slots_elapsed: u64,
@@ -291,11 +286,8 @@ fn compound_interest(
     let protocol_take_rate = Fraction::from_percent(reserve.protocol_take_rate_pct as u64);
     let fixed_host_interest_rate = Fraction::from_bps(reserve.host_fixed_interest_rate_bps as u64);
 
-    
-    
     let approximate_borrow_rate = Fraction::from_bps(500); // ~5% APY as placeholder
 
-    // Approximate compounded interest
     let compounded_interest_rate = approximate_compounded_interest(
         approximate_borrow_rate
             .checked_add(fixed_host_interest_rate)
@@ -354,7 +346,8 @@ fn compound_interest(
     Ok((new_debt, new_acc_protocol_fees, pending_referral_fees))
 }
 
-/// Approximate compounded interest over elapsed slots
+
+
 fn approximate_compounded_interest(rate: Fraction, elapsed_slots: u64) -> Result<Fraction> {
     let base = rate
         .checked_div(Fraction::from_num(SLOTS_PER_YEAR))
