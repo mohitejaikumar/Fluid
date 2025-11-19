@@ -115,19 +115,18 @@ fn execute_rebalance<'info>(
     
     msg!("Vault balance: {}", vault_balance);
     // Step 2: Calculate new balances after depositing vault USDC to Juplend
-    let new_juplend_balance = current_juplend
+    let new_current_juplend_balance = current_juplend
         .checked_add(vault_balance)
         .ok_or(AggregatorError::MathOverflow)?;
-    let new_kamino_balance = current_kamino;
-    msg!("New Juplend balance: {}", new_juplend_balance);
-    msg!("New Kamino balance: {}", new_kamino_balance);
+    let new_current_kamino_balance = current_kamino;
+    msg!("New CurrentJuplend balance: {}", new_current_juplend_balance);
+    msg!("New Current Kamino balance: {}", new_current_kamino_balance);
     
 
     // Step 4: Determine which protocol has excess and rebalance
-    // Only rebalance if the amount to move is significant
-    if new_juplend_balance > target_juplend {
+    if new_current_juplend_balance > target_juplend {
         // Juplend has excess, move to Kamino
-        let amount_to_move = new_juplend_balance
+        let amount_to_move = new_current_juplend_balance
             .checked_sub(target_juplend)
             .ok_or(AggregatorError::MathOverflow)?;
 
@@ -143,9 +142,9 @@ fn execute_rebalance<'info>(
         kamino_accounts.execute_complete_deposit(amount_to_move, config_bump)?;
 
         
-    } else if new_kamino_balance > target_kamino {
+    } else if new_current_kamino_balance > target_kamino {
         // Kamino has excess, move to Juplend
-        let amount_to_move = new_kamino_balance
+        let amount_to_move = new_current_kamino_balance
             .checked_sub(target_kamino)
             .ok_or(AggregatorError::MathOverflow)?;
         
