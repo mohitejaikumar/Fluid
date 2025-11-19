@@ -110,9 +110,11 @@ curl -X POST http://localhost:8899 \
     "params": [
       "AR17nM5Ny8kVyHZMhyULaecb1K9HdQcN7VPNjyPigdTL",
       "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+      {
       "amount": 100000000000
-    ],
-    "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+      },
+      "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+    ]
   }'
 ```
 
