@@ -7,7 +7,7 @@ A Solana-based DeFi yield aggregator that optimizes deposits across multiple len
 - [Prerequisites](#prerequisites)
 - [Local Development Setup](#local-development-setup)
 - [Project Structure](#project-structure)
-- [Troubleshooting](#troubleshooting)
+- [Key Features](#key-features)
 
 ## Prerequisites
 
