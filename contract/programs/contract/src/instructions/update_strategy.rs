@@ -1,7 +1,12 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token_interface::{Mint, TokenAccount};
 
-use crate::{constants::BPS_BASE, errors::AggregatorError, events::AllocationUpdateEvent, states::aggregator_config::AggregatorConfig};
+use crate::{
+    constants::BPS_BASE, 
+    errors::AggregatorError, 
+    events::AllocationUpdateEvent, 
+    states::aggregator_config::AggregatorConfig
+};
 
 
 

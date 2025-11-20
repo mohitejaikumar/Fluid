@@ -1,7 +1,17 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token_interface::{Mint, TokenAccount, TokenInterface};
 
-use crate::{constants::{BPS_BASE, MIN_OPERATE_AMOUNT}, errors::AggregatorError, events::RebalanceEvent, helpers::{deposit_to_juplend::Juplend, deposit_to_kamino::KaminoVault, get_kamino_balance::get_kamino_shares_amount_from_usdc}, states::aggregator_config::AggregatorConfig};
+use crate::{
+    constants::{BPS_BASE, MIN_OPERATE_AMOUNT}, 
+    errors::AggregatorError, events::RebalanceEvent, 
+    helpers::{
+        deposit_to_juplend::Juplend, deposit_to_kamino::KaminoVault
+    }, 
+    states::{
+        ReserveWithdrawAccounts, 
+        aggregator_config::AggregatorConfig
+    },
+};
 
 
 
@@ -155,31 +165,27 @@ fn execute_rebalance<'info>(
         
         // Get Kamino shares to withdraw
         let current_slot = Clock::get()?.slot;
-        let kamino_user_shares_ata_account_info = InterfaceAccount::<TokenAccount>::try_from(&remaining_accounts[17])?;
+        let kamino_user_shares_ata_account_info = InterfaceAccount::<TokenAccount>::try_from(&remaining_accounts[31])?;
+        let kamino_user_state_account_info = &remaining_accounts[30];
         let kamino_vault_state_account_info = &remaining_accounts[13];
 
-        let reserve_accounts: Vec<AccountInfo<'info>> = kamino_accounts.reserve_accounts
-        .iter()
-        .map(|x| x.reserve.clone())
-        .collect();
-
         
-        let shares_amount = get_kamino_shares_amount_from_usdc(
-            amount_to_move,
+        let temp_reserve_accounts : Vec<ReserveWithdrawAccounts<'info>> = kamino_accounts.reserve_accounts.clone();
+        let reserve_accounts: Vec<AccountInfo<'info>> = temp_reserve_accounts.iter().map(|x| x.reserve.clone()).collect();
+
+        kamino_accounts.withdraw_from_kamino_by_shares(
+            &kamino_user_shares_ata_account_info,
+            kamino_user_state_account_info,
             kamino_vault_state_account_info,
-            &kamino_user_shares_ata_account_info,
-            reserve_accounts.as_slice(),
-            Some(current_slot),
-        )?;
-
-        msg!("Withdrawing from Kamino: {}", shares_amount);
-        msg!("Kamino vault usdc amount before withdraw: {}", vault_usdc.amount);
-
-        kamino_accounts.execute_complete_withdraw(
-            &kamino_user_shares_ata_account_info,
-            shares_amount,
+            &reserve_accounts,
+            current_slot,
+            amount_to_move,
             config_bump,
         )?;
+
+        msg!("Kamino vault usdc amount before withdraw: {}", vault_usdc.amount);
+
+        
 
         vault_usdc.reload().map_err(|_| AggregatorError::AccountReloadFailed)?;
 

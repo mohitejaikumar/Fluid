@@ -1,7 +1,25 @@
 use anchor_lang::prelude::*;
-use anchor_spl::{ associated_token::AssociatedToken, token_2022::{MintTo, TransferChecked, mint_to, transfer_checked}, token_interface::{Mint, TokenAccount, TokenInterface}};
+use anchor_spl::{ 
+    associated_token::AssociatedToken, 
+    token_2022::{MintTo, TransferChecked, mint_to, transfer_checked
+    }, 
+    token_interface::{
+        Mint, 
+        TokenAccount, 
+        TokenInterface
+    }
+};
 
-use crate::{errors::AggregatorError, events::DepositEvent, helpers::{calculate_shares_to_mint::calculate_shares_to_mint, calculate_total_asset_balance::calculate_total_asset_balance, rebalance_allocation::rebalance_allocation}, states::aggregator_config::AggregatorConfig};
+use crate::{
+    errors::AggregatorError, 
+    events::DepositEvent, 
+    helpers::{
+        calculate_shares_to_mint::calculate_shares_to_mint, 
+        calculate_total_asset_balance::calculate_total_asset_balance, 
+        rebalance_allocation::rebalance_allocation
+    }, 
+    states::aggregator_config::AggregatorConfig
+};
 
 
 #[derive(Accounts)]
@@ -15,14 +33,14 @@ pub struct Deposit<'info> {
         seeds = [b"config"],
         bump = config.bump
     )]
-    pub config: Account<'info, AggregatorConfig>,
+    pub config: Box<Account<'info, AggregatorConfig>>,
 
     #[account(
         mut,
         constraint = user_usdc.mint == config.usdc_mint,
         constraint = user_usdc.owner == user.key()
     )]
-    pub user_usdc: InterfaceAccount<'info, TokenAccount>,
+    pub user_usdc: Box<InterfaceAccount<'info, TokenAccount>>,
 
     #[account(
         init_if_needed,
@@ -30,26 +48,26 @@ pub struct Deposit<'info> {
         associated_token::mint = cusdc_mint,
         associated_token::authority = user
     )]
-    pub user_cusdc: InterfaceAccount<'info, TokenAccount>,
+    pub user_cusdc: Box<InterfaceAccount<'info, TokenAccount>>,
 
     #[account(
         mut,
         associated_token::mint = config.usdc_mint,
         associated_token::authority = config,
     )]
-    pub vault_usdc: InterfaceAccount<'info, TokenAccount>,
+    pub vault_usdc: Box<InterfaceAccount<'info, TokenAccount>>,
 
     #[account(
         mut,
         seeds = [b"cusdc-mint"],
         bump
     )]
-    pub cusdc_mint: InterfaceAccount<'info, Mint>,
+    pub cusdc_mint: Box<InterfaceAccount<'info, Mint>>,
     
     #[account(
         constraint = usdc_mint.key() == config.usdc_mint
     )]
-    pub usdc_mint: InterfaceAccount<'info, Mint>,
+    pub usdc_mint: Box<InterfaceAccount<'info, Mint>>,
 
     pub token_program: Interface<'info, TokenInterface>,
     pub associated_token_program: Program<'info, AssociatedToken>,

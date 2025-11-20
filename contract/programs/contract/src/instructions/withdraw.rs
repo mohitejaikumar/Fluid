@@ -1,7 +1,26 @@
 use anchor_lang::prelude::*;
-use anchor_spl::{ associated_token::AssociatedToken, token_2022::{Burn, TransferChecked, burn, transfer_checked}, token_interface::{Mint, TokenAccount, TokenInterface}};
+use anchor_spl::{ 
+    associated_token::AssociatedToken, 
+    token_2022::{
+        Burn, 
+        TransferChecked, 
+        burn, 
+        transfer_checked
+    }, 
+    token_interface::{Mint, TokenAccount, TokenInterface}
+};
 
-use crate::{errors::AggregatorError, events::WithdrawEvent, helpers::{calculate_total_asset_balance::calculate_total_asset_balance, calculate_usdc_for_shares::calculate_usdc_for_shares, rebalance_allocation::rebalance_allocation, withdraw_from_protocols::withdraw_from_protocols}, states::aggregator_config::AggregatorConfig};
+use crate::{
+    errors::AggregatorError, 
+    events::WithdrawEvent, 
+    helpers::{
+        calculate_total_asset_balance::calculate_total_asset_balance, 
+        calculate_usdc_for_shares::calculate_usdc_for_shares, 
+        rebalance_allocation::rebalance_allocation, 
+        withdraw_from_protocols::withdraw_from_protocols
+    }, 
+    states::aggregator_config::AggregatorConfig
+};
 
 
 

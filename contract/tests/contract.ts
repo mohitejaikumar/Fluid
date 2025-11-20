@@ -51,6 +51,7 @@ describe("contract", () => {
   let baseVaultAuthority: PublicKey;
   let sharesMint: PublicKey;
   let userSharesAta: PublicKey;
+  let configSharesAta: PublicKey;
   let klendProgram: PublicKey;
   let sharesTokenProgram: PublicKey;
   let eventAuthority: PublicKey;
@@ -58,6 +59,7 @@ describe("contract", () => {
   let farmState: PublicKey;
   let farmProgram: PublicKey;
   let userState: PublicKey;
+  let configState: PublicKey;
   let farmVault: PublicKey;
   let scopePrice: PublicKey;
   let farmVaultAuthority: PublicKey;
@@ -167,16 +169,24 @@ describe("contract", () => {
   const simulateTransaction = async (transaction: VersionedTransaction) => {
     const simulation = await provider.connection.simulateTransaction(transaction, {
           commitment: 'confirmed',
+          replaceRecentBlockhash: true,
         });
         
-    console.log("Simulation result:", JSON.stringify(simulation, null, 2));
+    console.log("\n" + "=".repeat(80));
+    console.log("FULL SIMULATION LOGS");
+    console.log("=".repeat(80));
         
     if (simulation.value.err) {
         console.error("Simulation error:", simulation.value.err);
-        console.log("Simulation logs:");
-        simulation.value.logs?.forEach((log, idx) => console.log(`  ${idx}: ${log}`));
+        console.log("\nAll simulation logs:");
+        simulation.value.logs?.forEach((log, idx) => console.log(`${idx}: ${log}`));
       throw new Error(`Simulation failed: ${JSON.stringify(simulation.value.err)}`);
     }
+    
+    console.log("Simulation successful!");
+    console.log("\nAll simulation logs:");
+    simulation.value.logs?.forEach((log, idx) => console.log(`${idx}: ${log}`));
+    console.log("=".repeat(80) + "\n");
   }
 
   const sendTransaction = async (transaction: VersionedTransaction) => {
@@ -368,14 +378,25 @@ describe("contract", () => {
       provider.connection,
       signer,
       sharesMint,
+      signer.publicKey,
+      false,
+      null,
+      null,
+    );
+
+    userSharesAta = temp2.address;
+    
+    let temp3 = await getOrCreateAssociatedTokenAccount(
+      provider.connection,
+      signer,
+      sharesMint,
       configPDA,
       true,
       null,
       null,
-
     );
 
-    userSharesAta = temp2.address;
+    configSharesAta = temp3.address;
 
     klendProgram = new PublicKey("KLend2g3cP87fffoy8q1mQqGKjrxjC8boSyAYavgmjD");
     sharesTokenProgram = new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
@@ -385,7 +406,8 @@ describe("contract", () => {
     farmState = new PublicKey("9FVjHqduhDPMVqvu3cXiEBjU6nvxvGdCCLRwd9WpVRZj");
     farmProgram = new PublicKey("FarmsPZpWu9i7Kky8tPN37rs2TpmMrAZrC7S7vJa91Hr");
 
-    userState = PublicKey.findProgramAddressSync([Buffer.from("user"), farmState.toBuffer(), configPDA.toBuffer()], farmProgram)[0];
+    userState = PublicKey.findProgramAddressSync([Buffer.from("user"), farmState.toBuffer(), signer.publicKey.toBuffer()], farmProgram)[0];
+    configState = PublicKey.findProgramAddressSync([Buffer.from("user"), farmState.toBuffer(), configPDA.toBuffer()], farmProgram)[0];
 
     farmVault = new PublicKey("CRsf9nPkGBUT1HDytxfoYe3PBa5CZc9Nsh9a5aoBbGnb");
     scopePrice = new PublicKey("FarmsPZpWu9i7Kky8tPN37rs2TpmMrAZrC7S7vJa91Hr");
@@ -481,6 +503,8 @@ describe("contract", () => {
       kaminoVaultProgram,
       farmVaultAuthority,
       instructionSysvar,
+      configState,
+      configSharesAta,
 
       reserveAccount1,
       ctokenVaultReserve1,
@@ -659,6 +683,16 @@ describe("contract", () => {
        isWritable: false
      },
      {
+       pubkey: configState,
+       isSigner: false,
+       isWritable: true
+     },
+     {
+       pubkey: configSharesAta,
+       isSigner: false,
+       isWritable: true
+     },
+     {
        pubkey: reserveAccount1,
        isSigner: false,
        isWritable: true
@@ -749,8 +783,8 @@ describe("contract", () => {
   });
  
 
-  it("Is initialized!", async () => {
-    const tx = await program.methods.initAggregatorConfig(10000).accountsStrict({
+  it("Initialize aggregator config", async () => {
+    const tx = await program.methods.initAggregatorConfig(5000).accountsStrict({
       authority: signer.publicKey,
       usdcMint: usdcMint,
       tokenProgram: TOKEN_PROGRAM_ID,
@@ -824,7 +858,7 @@ describe("contract", () => {
       usdcMint: usdcMint,
     }
 
-    const updateConfigIx = await program.methods.updateStrategy(5000) // 100% allocation to Juplend
+    const updateConfigIx = await program.methods.updateStrategy(7000) // 60% allocation to Juplend
       .accountsStrict(accounts)
       .signers([signer])
       .rpc({
@@ -886,7 +920,7 @@ describe("contract", () => {
 
   })
 
-  it("Withdraw from Juplend", async () => {
+  it("Withdraw", async () => {
     const accounts = {
       config: configPDA,
       user: signer.publicKey,

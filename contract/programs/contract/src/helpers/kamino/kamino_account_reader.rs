@@ -1,5 +1,4 @@
-/// Manual byte-offset readers for Kamino accounts
-/// 
+
 use anchor_lang::prelude::*;
 
 pub mod vault_offsets {

@@ -1,23 +1,39 @@
-use anchor_lang::prelude::{instruction::Instruction, program::invoke_signed, *};
-use anchor_spl::{associated_token::{Create, create_idempotent}, token_interface::{Mint, TokenAccount, TokenInterface}};
+use anchor_lang::prelude::{instruction::Instruction, program::{invoke, invoke_signed}, *};
+use anchor_spl::{
+    associated_token::{
+        Create, 
+        create_idempotent
+    }, 
+    token::{
+        TransferChecked, 
+        spl_token::state::Account as SplTokenAccount, 
+        transfer_checked
+    }, 
+    token_interface::{
+        Mint, 
+        TokenAccount, 
+        TokenInterface
+    }
+};
 
 use crate::{errors::AggregatorError, states::{AggregatorConfig, ReserveWithdrawAccounts}};
-
+use anchor_lang::solana_program::program_pack::Pack;
 
 
 fn get_deposit_discriminator() -> Vec<u8> {
-    // discriminator = sha256("global:deposit")[0..8]
     vec![242, 35, 198, 137, 82, 225, 242, 182]
 }
 
 fn get_farm_initialize_user_discriminator() -> Vec<u8> {
-    // discriminator = sha256("global:initializeUser")[0..8]
     vec![111, 17, 185, 250, 60, 122, 38, 254]
 }
 
 fn get_farm_stake_discriminator() -> Vec<u8> {
-    // discriminator = sha256("global:stake")[0..8]
     vec![206, 176, 202, 18, 200, 209, 179, 108]
+}
+
+fn get_farm_transfer_ownership_discriminator() -> Vec<u8> {
+    vec![65, 177, 215, 73, 53, 45, 99, 47]
 }
 
 
@@ -35,6 +51,7 @@ pub struct KaminoVault<'info> {
     pub shares_mint: AccountInfo<'info>,
     pub user_token_ata: AccountInfo<'info>,
     pub user_shares_ata: AccountInfo<'info>,
+    pub config_shares_ata: AccountInfo<'info>,
     pub klend_program: AccountInfo<'info>,
     pub token_program: AccountInfo<'info>,
     pub shares_token_program: AccountInfo<'info>,
@@ -47,7 +64,8 @@ pub struct KaminoVault<'info> {
     
     pub vault_farm: AccountInfo<'info>,          
     pub farm_state: AccountInfo<'info>,          
-    pub user_farm_state: AccountInfo<'info>,     
+    pub user_farm_state: AccountInfo<'info>,
+    pub config_state: AccountInfo<'info>,
     pub farm_vault: AccountInfo<'info>,          
     pub scope_prices: AccountInfo<'info>,        
     pub farm_program: AccountInfo<'info>,   
@@ -73,96 +91,68 @@ impl<'info> KaminoVault<'info> {
         rent: &AccountInfo<'info>,
     ) -> Result<Box<KaminoVault<'info>>> {
 
-        let mut account_iter = remaining_accounts.iter();
+        // Skip first 13 accounts (JupLend accounts) 
+        let number_of_juplend_accounts = 13; 
         
-        // Skip first 13 accounts (JupLend accounts)
-        for _ in 0..13 {
-            account_iter.next();
-        }
-
-        // Vault accounts
-        let kamino_vault_state = account_iter.next().ok_or(AggregatorError::MissingAccount)?;
-        let kamino_token_vault = account_iter.next().ok_or(AggregatorError::MissingAccount)?;
-        let kamino_base_vault_authority = account_iter.next().ok_or(AggregatorError::MissingAccount)?;
-        let kamino_shares_mint = account_iter.next().ok_or(AggregatorError::MissingAccount)?;
-        let kamino_user_shares_ata = account_iter.next().ok_or(AggregatorError::MissingAccount)?;
-        let kamino_klend_program = account_iter.next().ok_or(AggregatorError::MissingAccount)?;
-        let kamino_shares_token_program = account_iter.next().ok_or(AggregatorError::MissingAccount)?;
-        let kamino_event_authority = account_iter.next().ok_or(AggregatorError::MissingAccount)?;
-        let kamino_lending_vault_program = account_iter.next().ok_or(AggregatorError::MissingAccount)?;
+        let mut reserve_accounts: Vec<ReserveWithdrawAccounts<'info>> = Vec::with_capacity(2);
         
-        // Farm accounts
-        let kamino_user_state = account_iter.next().ok_or(AggregatorError::MissingAccount)?;
-        let kamino_farm_state = account_iter.next().ok_or(AggregatorError::MissingAccount)?;
-        let kamino_farm_vault = account_iter.next().ok_or(AggregatorError::MissingAccount)?;
-        let kamino_scope_prices = account_iter.next().ok_or(AggregatorError::MissingAccount)?;
-        let kamino_farm_program = account_iter.next().ok_or(AggregatorError::MissingAccount)?;
-        let kamino_vault_program = account_iter.next().ok_or(AggregatorError::MissingAccount)?;
-        let kamino_farm_vault_authority = account_iter.next().ok_or(AggregatorError::MissingAccount)?;
+        let reserve_idx = number_of_juplend_accounts + 9 + 7 + 3;
         
+        // Reserve 1 (7 accounts starting at reserve_idx)
+        reserve_accounts.push(ReserveWithdrawAccounts {
+            reserve: remaining_accounts.get(reserve_idx).ok_or(AggregatorError::MissingAccount)?.to_account_info(),
+            ctoken_vault: remaining_accounts.get(reserve_idx + 1).ok_or(AggregatorError::MissingAccount)?.to_account_info(),
+            lending_market: remaining_accounts.get(reserve_idx + 2).ok_or(AggregatorError::MissingAccount)?.to_account_info(),
+            lending_market_authority: remaining_accounts.get(reserve_idx + 3).ok_or(AggregatorError::MissingAccount)?.to_account_info(),
+            reserve_liquidity_supply: remaining_accounts.get(reserve_idx + 4).ok_or(AggregatorError::MissingAccount)?.to_account_info(),
+            reserve_collateral_mint: remaining_accounts.get(reserve_idx + 5).ok_or(AggregatorError::MissingAccount)?.to_account_info(),
+            reserve_collateral_token_program: remaining_accounts.get(reserve_idx + 6).ok_or(AggregatorError::MissingAccount)?.to_account_info(),
+        });
         
-        let instruction_sysvar = account_iter.next().ok_or(AggregatorError::MissingAccount)?;
+        // Reserve 2 (7 accounts starting at reserve_idx + 7)
+        let reserve_idx_2 = reserve_idx + 7;
+        reserve_accounts.push(ReserveWithdrawAccounts {
+            reserve: remaining_accounts.get(reserve_idx_2).ok_or(AggregatorError::MissingAccount)?.to_account_info(),
+            ctoken_vault: remaining_accounts.get(reserve_idx_2 + 1).ok_or(AggregatorError::MissingAccount)?.to_account_info(),
+            lending_market: remaining_accounts.get(reserve_idx_2 + 2).ok_or(AggregatorError::MissingAccount)?.to_account_info(),
+            lending_market_authority: remaining_accounts.get(reserve_idx_2 + 3).ok_or(AggregatorError::MissingAccount)?.to_account_info(),
+            reserve_liquidity_supply: remaining_accounts.get(reserve_idx_2 + 4).ok_or(AggregatorError::MissingAccount)?.to_account_info(),
+            reserve_collateral_mint: remaining_accounts.get(reserve_idx_2 + 5).ok_or(AggregatorError::MissingAccount)?.to_account_info(),
+            reserve_collateral_token_program: remaining_accounts.get(reserve_idx_2 + 6).ok_or(AggregatorError::MissingAccount)?.to_account_info(),
+        });
         
-        
-        let mut reserve_accounts: Vec<ReserveWithdrawAccounts<'info>> = Vec::new();
-        
-        // Reserve 1 (7 accounts)
-        let reserve_1 = ReserveWithdrawAccounts {
-            reserve: account_iter.next().ok_or(AggregatorError::MissingAccount)?.to_account_info(),
-            ctoken_vault: account_iter.next().ok_or(AggregatorError::MissingAccount)?.to_account_info(),
-            lending_market: account_iter.next().ok_or(AggregatorError::MissingAccount)?.to_account_info(),
-            lending_market_authority: account_iter.next().ok_or(AggregatorError::MissingAccount)?.to_account_info(),
-            reserve_liquidity_supply: account_iter.next().ok_or(AggregatorError::MissingAccount)?.to_account_info(),
-            reserve_collateral_mint: account_iter.next().ok_or(AggregatorError::MissingAccount)?.to_account_info(),
-            reserve_collateral_token_program: account_iter.next().ok_or(AggregatorError::MissingAccount)?.to_account_info(),
-        };
-        reserve_accounts.push(reserve_1);
-        
-        // Reserve 2 (7 accounts)
-        let reserve_2 = ReserveWithdrawAccounts {
-            reserve: account_iter.next().ok_or(AggregatorError::MissingAccount)?.to_account_info(),
-            ctoken_vault: account_iter.next().ok_or(AggregatorError::MissingAccount)?.to_account_info(),
-            lending_market: account_iter.next().ok_or(AggregatorError::MissingAccount)?.to_account_info(),
-            lending_market_authority: account_iter.next().ok_or(AggregatorError::MissingAccount)?.to_account_info(),
-            reserve_liquidity_supply: account_iter.next().ok_or(AggregatorError::MissingAccount)?.to_account_info(),
-            reserve_collateral_mint: account_iter.next().ok_or(AggregatorError::MissingAccount)?.to_account_info(),
-            reserve_collateral_token_program: account_iter.next().ok_or(AggregatorError::MissingAccount)?.to_account_info(),
-        };
-        reserve_accounts.push(reserve_2);
-    
-        
-
-        let kamino_accounts = Box::new(KaminoVault {
+        // Directly construct the Box to avoid large stack allocations
+        Ok(Box::new(KaminoVault {
             signer: signer.to_account_info(),
             config: config.to_account_info(),
-            vault_state: kamino_vault_state.to_account_info(),
-            token_vault: kamino_token_vault.to_account_info(),
+            config_state: remaining_accounts.get(number_of_juplend_accounts + 9 + 7 + 1).ok_or(AggregatorError::MissingAccount)?.to_account_info(),
+            config_shares_ata: remaining_accounts.get(number_of_juplend_accounts + 9 + 7 + 2).ok_or(AggregatorError::MissingAccount)?.to_account_info(),
+            vault_state: remaining_accounts.get(number_of_juplend_accounts).ok_or(AggregatorError::MissingAccount)?.to_account_info(),
+            token_vault: remaining_accounts.get(number_of_juplend_accounts + 1).ok_or(AggregatorError::MissingAccount)?.to_account_info(),
             token_mint: usdc_mint.to_account_info(),
-            base_vault_authority: kamino_base_vault_authority.to_account_info(),
-            shares_mint: kamino_shares_mint.to_account_info(),
+            base_vault_authority: remaining_accounts.get(number_of_juplend_accounts + 2).ok_or(AggregatorError::MissingAccount)?.to_account_info(),
+            shares_mint: remaining_accounts.get(number_of_juplend_accounts + 3).ok_or(AggregatorError::MissingAccount)?.to_account_info(),
             user_token_ata: vault_usdc.to_account_info(),
-            user_shares_ata: kamino_user_shares_ata.to_account_info(),
-            klend_program: kamino_klend_program.to_account_info(),
+            user_shares_ata: remaining_accounts.get(number_of_juplend_accounts + 4).ok_or(AggregatorError::MissingAccount)?.to_account_info(),
+            klend_program: remaining_accounts.get(number_of_juplend_accounts + 5).ok_or(AggregatorError::MissingAccount)?.to_account_info(),
             token_program: token_program.to_account_info(),
-            shares_token_program: kamino_shares_token_program.to_account_info(),
-            event_authority: kamino_event_authority.to_account_info(),
-            kamino_lending_vault_program: kamino_lending_vault_program.to_account_info(),
+            shares_token_program: remaining_accounts.get(number_of_juplend_accounts + 6).ok_or(AggregatorError::MissingAccount)?.to_account_info(),
+            event_authority: remaining_accounts.get(number_of_juplend_accounts + 7).ok_or(AggregatorError::MissingAccount)?.to_account_info(),
+            kamino_lending_vault_program: remaining_accounts.get(number_of_juplend_accounts + 8).ok_or(AggregatorError::MissingAccount)?.to_account_info(),
             associated_token_program: associated_token_program.to_account_info(),
-            farm_vault_authority: kamino_farm_vault_authority.to_account_info(),
+            farm_vault_authority: remaining_accounts.get(number_of_juplend_accounts + 9 + 6).ok_or(AggregatorError::MissingAccount)?.to_account_info(),
             system_program: system_program.to_account_info(),
             rent: rent.to_account_info(),
-            vault_farm: kamino_farm_state.to_account_info(),
-            farm_state: kamino_farm_state.to_account_info(),
-            user_farm_state: kamino_user_state.to_account_info(),
-            farm_vault: kamino_farm_vault.to_account_info(),
-            scope_prices: kamino_scope_prices.to_account_info(),
-            farm_program: kamino_farm_program.to_account_info(),
-            reserve_accounts: reserve_accounts,
-            instruction_sysvar: instruction_sysvar.to_account_info(),
-            kamino_vault_program: kamino_vault_program.to_account_info(),
-        });
-
-        Ok(kamino_accounts)
+            vault_farm: remaining_accounts.get(number_of_juplend_accounts + 9 + 1).ok_or(AggregatorError::MissingAccount)?.to_account_info(),
+            farm_state: remaining_accounts.get(number_of_juplend_accounts + 9 + 1).ok_or(AggregatorError::MissingAccount)?.to_account_info(),
+            user_farm_state: remaining_accounts.get(number_of_juplend_accounts + 9).ok_or(AggregatorError::MissingAccount)?.to_account_info(),
+            farm_vault: remaining_accounts.get(number_of_juplend_accounts + 9 + 2).ok_or(AggregatorError::MissingAccount)?.to_account_info(),
+            scope_prices: remaining_accounts.get(number_of_juplend_accounts + 9 + 3).ok_or(AggregatorError::MissingAccount)?.to_account_info(),
+            farm_program: remaining_accounts.get(number_of_juplend_accounts + 9 + 4).ok_or(AggregatorError::MissingAccount)?.to_account_info(),
+            reserve_accounts,
+            instruction_sysvar: remaining_accounts.get(number_of_juplend_accounts + 9 + 7).ok_or(AggregatorError::MissingAccount)?.to_account_info(),
+            kamino_vault_program: remaining_accounts.get(number_of_juplend_accounts + 9 + 5).ok_or(AggregatorError::MissingAccount)?.to_account_info(),
+        }))
     }
 
     
@@ -206,24 +196,25 @@ impl<'info> KaminoVault<'info> {
         let mut instruction_data = get_deposit_discriminator();
         instruction_data.extend_from_slice(&amount.to_le_bytes());
 
-        let mut account_metas = vec![
-            AccountMeta::new(*self.config.key, true),
-            AccountMeta::new(*self.vault_state.key, false),
-            AccountMeta::new(*self.token_vault.key, false),
-            AccountMeta::new_readonly(*self.token_mint.key, false),
-            AccountMeta::new_readonly(*self.base_vault_authority.key, false),
-            AccountMeta::new(*self.shares_mint.key, false),
-            AccountMeta::new(*self.user_token_ata.key, false),
-            AccountMeta::new(*self.user_shares_ata.key, false),
-            AccountMeta::new_readonly(*self.klend_program.key, false),
-            AccountMeta::new_readonly(*self.token_program.key, false),
-            AccountMeta::new_readonly(*self.shares_token_program.key, false),
-            AccountMeta::new_readonly(*self.event_authority.key, false),
-            AccountMeta::new_readonly(*self.kamino_lending_vault_program.key, false),
-        ];
+        // Pre-allocate with capacity to avoid reallocation
+        let num_reserves = self.reserve_accounts.len();
+        let mut account_metas = Vec::with_capacity(13 + num_reserves * 2);
+        
+        account_metas.push(AccountMeta::new(*self.config.key, true));
+        account_metas.push(AccountMeta::new(*self.vault_state.key, false));
+        account_metas.push(AccountMeta::new(*self.token_vault.key, false));
+        account_metas.push(AccountMeta::new_readonly(*self.token_mint.key, false));
+        account_metas.push(AccountMeta::new_readonly(*self.base_vault_authority.key, false));
+        account_metas.push(AccountMeta::new(*self.shares_mint.key, false));
+        account_metas.push(AccountMeta::new(*self.user_token_ata.key, false));
+        account_metas.push(AccountMeta::new(*self.config_shares_ata.key, false));
+        account_metas.push(AccountMeta::new_readonly(*self.klend_program.key, false));
+        account_metas.push(AccountMeta::new_readonly(*self.token_program.key, false));
+        account_metas.push(AccountMeta::new_readonly(*self.shares_token_program.key, false));
+        account_metas.push(AccountMeta::new_readonly(*self.event_authority.key, false));
+        account_metas.push(AccountMeta::new_readonly(*self.kamino_lending_vault_program.key, false));
 
         // Append remaining accounts (reserves + lending markets)
-        let num_reserves = self.reserve_accounts.len();
         for i in 0..num_reserves {
             account_metas.push(AccountMeta::new(*self.reserve_accounts[i].reserve.key, false));
         }
@@ -240,21 +231,22 @@ impl<'info> KaminoVault<'info> {
         let seeds = &[b"config".as_ref(), &[config_bump]];
         let signer_seeds = &[&seeds[..]];
 
-        let mut accounts_for_cpi = vec![
-            self.config.clone(),
-            self.vault_state.clone(),
-            self.token_vault.clone(),
-            self.token_mint.clone(),
-            self.base_vault_authority.clone(),
-            self.shares_mint.clone(),
-            self.user_token_ata.clone(),
-            self.user_shares_ata.clone(),
-            self.klend_program.clone(),
-            self.token_program.clone(),
-            self.shares_token_program.clone(),
-            self.event_authority.clone(),
-            self.kamino_lending_vault_program.clone(),
-        ];
+        // Pre-allocate with capacity to avoid reallocation
+        let mut accounts_for_cpi = Vec::with_capacity(13 + num_reserves * 2);
+        
+        accounts_for_cpi.push(self.config.clone());
+        accounts_for_cpi.push(self.vault_state.clone());
+        accounts_for_cpi.push(self.token_vault.clone());
+        accounts_for_cpi.push(self.token_mint.clone());
+        accounts_for_cpi.push(self.base_vault_authority.clone());
+        accounts_for_cpi.push(self.shares_mint.clone());
+        accounts_for_cpi.push(self.user_token_ata.clone());
+        accounts_for_cpi.push(self.config_shares_ata.clone());
+        accounts_for_cpi.push(self.klend_program.clone());
+        accounts_for_cpi.push(self.token_program.clone());
+        accounts_for_cpi.push(self.shares_token_program.clone());
+        accounts_for_cpi.push(self.event_authority.clone());
+        accounts_for_cpi.push(self.kamino_lending_vault_program.clone());
 
         for account in &self.reserve_accounts {
             accounts_for_cpi.push(account.reserve.clone());
@@ -272,21 +264,46 @@ impl<'info> KaminoVault<'info> {
         Ok(())
     }
 
-    
-    fn initialize_user_farm_state(&self, config_bump: u8) -> Result<()> {
-        let instruction_data = get_farm_initialize_user_discriminator();
+    fn prefund_user_farm_state(&self, config_bump: u8) -> Result<()> {
 
+
+        let seeds = &[b"config".as_ref(), &[config_bump]];
+        let signer_seeds = &[&seeds[..]];
+
+
+        transfer_checked(CpiContext::new_with_signer(
+            self.token_program.to_account_info(), 
+            TransferChecked {
+                from: self.config_shares_ata.to_account_info(),
+                to: self.user_shares_ata.to_account_info(),
+                authority: self.config.to_account_info(),
+                mint: self.shares_mint.to_account_info(),
+            },
+            signer_seeds), 
+            1000000, 
+            6
+        )
+        .map_err(|e| {
+            msg!("Kamino farm prefund user CPI failed with error: {:?}", e);
+            AggregatorError::CpiToLendingProgramFailed
+        })?;
+
+        Ok(())
+    }
+
+    fn transfer_ownership_user_farm_state(&self) -> Result<()> {
+        let instruction_data = get_farm_transfer_ownership_discriminator();
         
-        let account_metas = vec![
-            AccountMeta::new(*self.config.key, true),        
-            AccountMeta::new(*self.config.key, true),                 
-            AccountMeta::new_readonly(*self.config.key, false),       
-            AccountMeta::new_readonly(*self.config.key, false),       
-            AccountMeta::new(*self.user_farm_state.key, false),     
-            AccountMeta::new(*self.farm_state.key, false),          
-            AccountMeta::new_readonly(*self.system_program.key, false),
-            AccountMeta::new_readonly(*self.rent.key, false),
-        ];
+        let mut account_metas = Vec::with_capacity(9);
+        account_metas.push(AccountMeta::new(*self.signer.key, true));
+        account_metas.push(AccountMeta::new(*self.signer.key, true));
+        account_metas.push(AccountMeta::new_readonly(*self.config.key, false));
+        account_metas.push(AccountMeta::new(*self.user_farm_state.key, false));
+        account_metas.push(AccountMeta::new(*self.config_state.key, false));
+        account_metas.push(AccountMeta::new(*self.farm_state.key, false));
+        account_metas.push(AccountMeta::new_readonly(*self.scope_prices.key, false));
+        account_metas.push(AccountMeta::new_readonly(*self.system_program.key, false));
+        account_metas.push(AccountMeta::new_readonly(*self.rent.key, false));
 
         let instruction = Instruction {
             program_id: *self.farm_program.key,
@@ -294,23 +311,57 @@ impl<'info> KaminoVault<'info> {
             data: instruction_data,
         };
 
-        let seeds = &[b"config".as_ref(), &[config_bump]];
-        let signer_seeds = &[&seeds[..]];
+        let mut accounts_for_cpi = Vec::with_capacity(9);
+        accounts_for_cpi.push(self.signer.clone());
+        accounts_for_cpi.push(self.signer.clone());
+        accounts_for_cpi.push(self.config.clone());
+        accounts_for_cpi.push(self.user_farm_state.clone());
+        accounts_for_cpi.push(self.config_state.clone());
+        accounts_for_cpi.push(self.farm_state.clone());
+        accounts_for_cpi.push(self.scope_prices.clone());
+        accounts_for_cpi.push(self.system_program.clone());
+        accounts_for_cpi.push(self.rent.clone());
 
-        invoke_signed(
-            &instruction,
-            &[
-                self.config.clone(),
-                self.config.clone(),
-                self.config.clone(),
-                self.config.clone(),  
-                self.user_farm_state.clone(),
-                self.farm_state.clone(),
-                self.system_program.clone(),
-                self.rent.clone(),
-            ],
-            signer_seeds,
-        )
+        invoke(&instruction, &accounts_for_cpi)
+        .map_err(|e| {
+            msg!("Kamino farm init user CPI failed with error: {:?}", e);
+            AggregatorError::CpiToLendingProgramFailed
+        })?;
+
+        Ok(())
+    }
+
+    
+    fn initialize_user_farm_state(&self) -> Result<()> {
+        let instruction_data = get_farm_initialize_user_discriminator();
+
+        let mut account_metas = Vec::with_capacity(8);
+        account_metas.push(AccountMeta::new(*self.signer.key, true));
+        account_metas.push(AccountMeta::new(*self.signer.key, true));
+        account_metas.push(AccountMeta::new_readonly(*self.signer.key, false));
+        account_metas.push(AccountMeta::new_readonly(*self.signer.key, false));
+        account_metas.push(AccountMeta::new(*self.user_farm_state.key, false));
+        account_metas.push(AccountMeta::new(*self.farm_state.key, false));
+        account_metas.push(AccountMeta::new_readonly(*self.system_program.key, false));
+        account_metas.push(AccountMeta::new_readonly(*self.rent.key, false));
+
+        let instruction = Instruction {
+            program_id: *self.farm_program.key,
+            accounts: account_metas,
+            data: instruction_data,
+        };
+
+        let mut accounts_for_cpi = Vec::with_capacity(8);
+        accounts_for_cpi.push(self.signer.clone());
+        accounts_for_cpi.push(self.signer.clone());
+        accounts_for_cpi.push(self.signer.clone());
+        accounts_for_cpi.push(self.signer.clone());
+        accounts_for_cpi.push(self.user_farm_state.clone());
+        accounts_for_cpi.push(self.farm_state.clone());
+        accounts_for_cpi.push(self.system_program.clone());
+        accounts_for_cpi.push(self.rent.clone());
+
+        invoke(&instruction, &accounts_for_cpi)
         .map_err(|e| {
             msg!("Kamino farm init user CPI failed with error: {:?}", e);
             AggregatorError::CpiToLendingProgramFailed
@@ -320,20 +371,19 @@ impl<'info> KaminoVault<'info> {
     }
 
 
-    fn stake_in_farm(&self, shares_amount: u64, config_bump: u8) -> Result<()> {
+    fn stake_in_farm_by_config(&self, shares_amount: u64, config_bump: u8) -> Result<()> {
         let mut instruction_data = get_farm_stake_discriminator();
         instruction_data.extend_from_slice(&shares_amount.to_le_bytes());
 
-        let account_metas = vec![
-            AccountMeta::new(*self.config.key, true),        
-            AccountMeta::new(*self.user_farm_state.key, false),     
-            AccountMeta::new(*self.farm_state.key, false),          
-            AccountMeta::new(*self.farm_vault.key, false),          
-            AccountMeta::new(*self.user_shares_ata.key, false),     
-            AccountMeta::new(*self.shares_mint.key, false), 
-            AccountMeta::new_readonly(*self.scope_prices.key, false), 
-            AccountMeta::new_readonly(*self.token_program.key, false),
-        ];
+        let mut account_metas = Vec::with_capacity(8);
+        account_metas.push(AccountMeta::new(*self.config.key, true));
+        account_metas.push(AccountMeta::new(*self.config_state.key, false));
+        account_metas.push(AccountMeta::new(*self.farm_state.key, false));
+        account_metas.push(AccountMeta::new(*self.farm_vault.key, false));
+        account_metas.push(AccountMeta::new(*self.config_shares_ata.key, false));
+        account_metas.push(AccountMeta::new_readonly(*self.shares_mint.key, false));
+        account_metas.push(AccountMeta::new_readonly(*self.scope_prices.key, false));
+        account_metas.push(AccountMeta::new_readonly(*self.token_program.key, false));
 
         let instruction = Instruction {
             program_id: *self.farm_program.key,
@@ -344,20 +394,17 @@ impl<'info> KaminoVault<'info> {
         let seeds = &[b"config".as_ref(), &[config_bump]];
         let signer_seeds = &[&seeds[..]];
 
-        invoke_signed(
-            &instruction,
-            &[
-                self.config.clone(),
-                self.user_farm_state.clone(),
-                self.farm_state.clone(),
-                self.farm_vault.clone(),
-                self.user_shares_ata.clone(),
-                self.shares_mint.clone(),
-                self.scope_prices.clone(),
-                self.token_program.clone(),
-            ],
-            signer_seeds,
-        )
+        let mut accounts_for_cpi = Vec::with_capacity(8);
+        accounts_for_cpi.push(self.config.clone());
+        accounts_for_cpi.push(self.config_state.clone());
+        accounts_for_cpi.push(self.farm_state.clone());
+        accounts_for_cpi.push(self.farm_vault.clone());
+        accounts_for_cpi.push(self.config_shares_ata.clone());
+        accounts_for_cpi.push(self.shares_mint.clone());
+        accounts_for_cpi.push(self.scope_prices.clone());
+        accounts_for_cpi.push(self.token_program.clone());
+
+        invoke_signed(&instruction, &accounts_for_cpi, signer_seeds)
         .map_err(|e| {
             msg!("Kamino farm stake CPI failed with error: {:?}", e);
             AggregatorError::CpiToLendingProgramFailed
@@ -366,6 +413,43 @@ impl<'info> KaminoVault<'info> {
         Ok(())
     }
 
+    fn stake_in_farm_by_user(&self, shares_amount: u64) -> Result<()> {
+        let mut instruction_data = get_farm_stake_discriminator();
+        instruction_data.extend_from_slice(&shares_amount.to_le_bytes());
+
+        let mut account_metas = Vec::with_capacity(8);
+        account_metas.push(AccountMeta::new(*self.signer.key, true));
+        account_metas.push(AccountMeta::new(*self.user_farm_state.key, false));
+        account_metas.push(AccountMeta::new(*self.farm_state.key, false));
+        account_metas.push(AccountMeta::new(*self.farm_vault.key, false));
+        account_metas.push(AccountMeta::new(*self.user_shares_ata.key, false));
+        account_metas.push(AccountMeta::new_readonly(*self.shares_mint.key, false));
+        account_metas.push(AccountMeta::new_readonly(*self.scope_prices.key, false));
+        account_metas.push(AccountMeta::new_readonly(*self.token_program.key, false));
+
+        let instruction = Instruction {
+            program_id: *self.farm_program.key,
+            accounts: account_metas,
+            data: instruction_data,
+        };
+
+
+        let mut accounts_for_cpi = Vec::with_capacity(8);
+        accounts_for_cpi.push(self.signer.clone());
+        accounts_for_cpi.push(self.user_farm_state.clone());
+        accounts_for_cpi.push(self.farm_state.clone());
+        accounts_for_cpi.push(self.farm_vault.clone());
+        accounts_for_cpi.push(self.user_shares_ata.clone());
+        accounts_for_cpi.push(self.shares_mint.clone());
+        accounts_for_cpi.push(self.scope_prices.clone());
+        accounts_for_cpi.push(self.token_program.clone());
+
+        invoke(&instruction, &accounts_for_cpi)?;
+
+        Ok(())
+    }
+
+
 
     pub fn stake_shares_in_farm(&self, shares_amount: u64, config_bump: u8) -> Result<()> {
         if !self.has_farm() {
@@ -373,14 +457,41 @@ impl<'info> KaminoVault<'info> {
             return Ok(());
         }
 
-        let init_result = self.initialize_user_farm_state(config_bump);
-        match init_result {
-            Ok(_) => msg!("User farm state initialized"),
-            Err(_) => msg!("User farm state already exists or init failed, continuing to stake"),
+        // Check if user farm state account exists before initializing
+        let user_farm_state_exists = self.user_farm_state.data_len() > 0 
+            && self.user_farm_state.owner == self.farm_program.key;
+        
+        if !user_farm_state_exists {
+            let init_result = self.initialize_user_farm_state();
+            match init_result {
+                Ok(_) => msg!("User farm state initialized"),
+                Err(_) => msg!("User farm state init failed, continuing to stake"),
+            }
+        } else {
+            msg!("User farm state already exists, skipping initialization");
+        }
+
+        let prefund_result = self.prefund_user_farm_state(config_bump);
+        match prefund_result {
+            Ok(_) => msg!("User farm state prefunded"),
+            Err(_) => msg!("User farm state prefund failed, continuing to stake"),
+        }
+
+        // stake the transferred amount to the farm
+        let stake_result = self.stake_in_farm_by_user(1000000);
+        match stake_result {
+            Ok(_) => msg!("User farm state staked"),
+            Err(e) => msg!("User farm state stake failed with error: {:?}", e),
+        }
+
+        let transfer_result = self.transfer_ownership_user_farm_state();
+        match transfer_result {
+            Ok(_) => msg!("User farm state transferred ownership"),
+            Err(_) => msg!("User farm state transfer ownership failed, continuing to stake"),
         }
 
 
-        self.stake_in_farm(shares_amount, config_bump)?;
+        self.stake_in_farm_by_config(shares_amount - 1000000, config_bump)?;
 
         Ok(())
     }
@@ -390,13 +501,26 @@ impl<'info> KaminoVault<'info> {
         // Step 1: Create shares ATA if needed
         self.create_shares_ata(
             &self.shares_mint.to_account_info(),
-            &self.user_shares_ata.to_account_info(),
+            &self.config_shares_ata.to_account_info(),
             &self.config.to_account_info(),
         )?;
-        
+        // this is for user shares ATA
+        self.create_shares_ata(
+            &self.shares_mint.to_account_info(),
+            &self.user_shares_ata.to_account_info(),
+            &self.signer.to_account_info(),
+        )?;
         // Step 2: Execute deposit
         self.deposit_to_kamino(amount, config_bump)?;
-        
+
+        let amount_to_stake = {
+            let data = self.config_shares_ata.try_borrow_data()?;
+            SplTokenAccount::unpack(&data)?.amount
+        };
+
+        msg!("Amount to stake: {}", amount_to_stake);
+        // Step 3: Stake shares in farm
+        self.stake_shares_in_farm(amount_to_stake, config_bump)?;
         
         Ok(())
     }

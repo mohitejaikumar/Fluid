@@ -1,5 +1,4 @@
 use anchor_lang::prelude::*;
-use anchor_spl::{token_interface::TokenAccount};
 
 use crate::{
     errors::AggregatorError,
@@ -35,7 +34,7 @@ In Kamino Vaults:
 
 pub fn get_kamino_balance<'info>(
     vault_state_account: &'info AccountInfo<'info>,
-    user_shares_ktoken: &InterfaceAccount<'info, TokenAccount>,
+    ktoken_balance: u64,
     reserve_accounts: &[AccountInfo<'info>],
     current_slot: Option<u64>,
 ) -> Result<u64> {
@@ -46,8 +45,6 @@ pub fn get_kamino_balance<'info>(
     }
 
     let vault_fields = read_vault_state_fields(&vault_data)?;
-
-    let user_shares = user_shares_ktoken.amount;
 
     if vault_fields.shares_issued == 0 {
         return Ok(0);
@@ -80,7 +77,7 @@ pub fn get_kamino_balance<'info>(
         .ok_or(AggregatorError::MathOverflow)?;
     
     
-    let user_balance = Fraction::from(user_shares)
+    let user_balance = Fraction::from(ktoken_balance)
         .checked_mul(tokens_per_share)
         .ok_or(AggregatorError::MathOverflow)?;
     
@@ -145,24 +142,23 @@ fn calculate_total_invested_with_exchange_rate(
 pub fn get_kamino_shares_amount_from_usdc<'info>(
     usdc_amount: u64,
     vault_state_account: &'info AccountInfo<'info>,
-    user_shares_ktoken: &InterfaceAccount<'info, TokenAccount>,
+    ktoken_balance: u64,
     reserve_accounts: &[AccountInfo<'info>],
     current_slot: Option<u64>,
 ) -> Result<u64> {
-    let kamino_balance = get_kamino_balance(vault_state_account, user_shares_ktoken, reserve_accounts, current_slot)?;
+    let kamino_usdc_balance = get_kamino_balance(vault_state_account, ktoken_balance, reserve_accounts, current_slot)?;
 
-    if kamino_balance == 0 {
+    if kamino_usdc_balance == 0 {
         return Ok(0);
     }
 
-    let user_shares = user_shares_ktoken.amount;
 
-    // shares_amount = (user_shares * usdc_amount) / kamino_balance
+    // shares_amount = (user_shares * usdc_amount) / kamino_usdc_balance
 
-    let shares_amount = (Fraction::from(user_shares)
+    let shares_amount = (Fraction::from(ktoken_balance)
         .checked_mul(Fraction::from(usdc_amount))
         .ok_or(AggregatorError::MathOverflow)?)
-        .checked_div(Fraction::from(kamino_balance))
+        .checked_div(Fraction::from(kamino_usdc_balance))
         .ok_or(AggregatorError::MathOverflow)?;
 
     shares_amount.try_to_floor::<u64>().ok_or(AggregatorError::MathOverflow.into())

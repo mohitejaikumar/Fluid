@@ -1,11 +1,16 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token_interface::{TokenAccount};
 
-use crate::{errors::AggregatorError, helpers::token_reserve_helper::get_supply_exchange_price, states::juplend::{lending::Lending, lending_rewards_rate_model::LendingRewardsRateModel}};
+use crate::{
+    errors::AggregatorError,
+    helpers::{
+        token_reserve_helper::get_supply_exchange_price,
+    },
+    states::juplend::{lending::Lending, lending_rewards_rate_model::LendingRewardsRateModel}
+};
 
-const EXCHANGE_PRICES_PRECISION: u128 = 1000000000000;
-const SECONDS_PER_YEAR: u128 = 31536000;
-const MAX_REWARDS_RATE: u128 = 50000000000000;
+use crate::constants::{EXCHANGE_PRICES_PRECISION, SECONDS_PER_YEAR, MAX_REWARDS_RATE};
+
 
 
 pub fn get_juplend_balance<'info>(

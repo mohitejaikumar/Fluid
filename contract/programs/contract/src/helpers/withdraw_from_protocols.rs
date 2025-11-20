@@ -1,9 +1,14 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token_interface::{Mint, TokenAccount, TokenInterface};
 
-use crate::{errors::AggregatorError, helpers::{calculate_total_asset_balance::calculate_total_asset_balance, deposit_to_juplend::Juplend, deposit_to_kamino::KaminoVault}, states::{AggregatorConfig, ReserveWithdrawAccounts}};
-
-
+use crate::{
+    errors::AggregatorError, helpers::{
+        calculate_total_asset_balance::calculate_total_asset_balance,
+        deposit_to_juplend::Juplend,
+        deposit_to_kamino::KaminoVault
+    }, 
+    states::{AggregatorConfig, ReserveWithdrawAccounts}
+};
 
 
 
@@ -60,8 +65,9 @@ pub fn withdraw_from_protocols<'c, 'info>(
     )?;
 
 
-    let kamino_user_shares_ata_account_info = InterfaceAccount::<TokenAccount>::try_from(&remaining_accounts[17])?;
+    let kamino_user_shares_ata_account_info = InterfaceAccount::<TokenAccount>::try_from(&remaining_accounts[31])?;
     let kamino_vault_state_account_info = &remaining_accounts[13];
+    let kamino_user_state_account_info = &remaining_accounts[30];
     let temp_reserve_accounts : Vec<ReserveWithdrawAccounts<'info>> = kamino_accounts.reserve_accounts.clone();
     let reserve_accounts: Vec<AccountInfo<'info>> = temp_reserve_accounts.iter().map(|x| x.reserve.clone()).collect();
 
@@ -75,6 +81,7 @@ pub fn withdraw_from_protocols<'c, 'info>(
         
             kamino_accounts.withdraw_from_kamino_by_shares(
                 &kamino_user_shares_ata_account_info,
+                kamino_user_state_account_info,
                 kamino_vault_state_account_info,
                 &reserve_accounts,
                 current_slot,
@@ -88,6 +95,7 @@ pub fn withdraw_from_protocols<'c, 'info>(
             
             kamino_accounts.withdraw_from_kamino_by_shares(
                 &kamino_user_shares_ata_account_info,
+                kamino_user_state_account_info,
                 kamino_vault_state_account_info,
                 &reserve_accounts,
                 current_slot,
