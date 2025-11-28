@@ -61,7 +61,7 @@ pub struct KaminoVault<'info> {
     pub associated_token_program: AccountInfo<'info>,
     pub system_program: AccountInfo<'info>,
     pub rent: AccountInfo<'info>,
-    
+    pub global_config: AccountInfo<'info>,
     pub vault_farm: AccountInfo<'info>,          
     pub farm_state: AccountInfo<'info>,          
     pub user_farm_state: AccountInfo<'info>,
@@ -96,7 +96,7 @@ impl<'info> KaminoVault<'info> {
         
         let mut reserve_accounts: Vec<ReserveWithdrawAccounts<'info>> = Vec::with_capacity(2);
         
-        let reserve_idx = number_of_juplend_accounts + 9 + 7 + 3;
+        let reserve_idx = number_of_juplend_accounts + 9 + 7 + 4;
         
         // Reserve 1 (7 accounts starting at reserve_idx)
         reserve_accounts.push(ReserveWithdrawAccounts {
@@ -120,11 +120,12 @@ impl<'info> KaminoVault<'info> {
             reserve_collateral_mint: remaining_accounts.get(reserve_idx_2 + 5).ok_or(AggregatorError::MissingAccount)?.to_account_info(),
             reserve_collateral_token_program: remaining_accounts.get(reserve_idx_2 + 6).ok_or(AggregatorError::MissingAccount)?.to_account_info(),
         });
-        
+        let global_config = remaining_accounts.get(reserve_idx - 1).ok_or(AggregatorError::MissingAccount)?.to_account_info();
         // Directly construct the Box to avoid large stack allocations
         Ok(Box::new(KaminoVault {
             signer: signer.to_account_info(),
             config: config.to_account_info(),
+            global_config: global_config,
             config_state: remaining_accounts.get(number_of_juplend_accounts + 9 + 7 + 1).ok_or(AggregatorError::MissingAccount)?.to_account_info(),
             config_shares_ata: remaining_accounts.get(number_of_juplend_accounts + 9 + 7 + 2).ok_or(AggregatorError::MissingAccount)?.to_account_info(),
             vault_state: remaining_accounts.get(number_of_juplend_accounts).ok_or(AggregatorError::MissingAccount)?.to_account_info(),

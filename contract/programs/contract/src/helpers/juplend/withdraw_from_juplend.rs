@@ -4,7 +4,6 @@ use crate::{errors::AggregatorError, helpers::deposit_to_juplend::Juplend};
 
 
 fn get_withdraw_discriminator() -> Vec<u8> {
-    // discriminator = sha256("global:withdraw")[0..8]
     vec![183, 18, 70, 156, 148, 109, 161, 34]
 }
 

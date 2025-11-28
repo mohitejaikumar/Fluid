@@ -137,6 +137,8 @@ impl<'info> KaminoVault<'info> {
         let mut account_metas = Vec::with_capacity(29);
         account_metas.push(AccountMeta::new(*self.config.key, true));
         account_metas.push(AccountMeta::new(*self.vault_state.key, false));
+        // add global config here 
+        account_metas.push(AccountMeta::new_readonly(*self.global_config.key, false));
         account_metas.push(AccountMeta::new(*self.token_vault.key, false));
         account_metas.push(AccountMeta::new_readonly(*self.base_vault_authority.key, false));
         account_metas.push(AccountMeta::new(*self.user_token_ata.key, false));
@@ -176,6 +178,7 @@ impl<'info> KaminoVault<'info> {
         let mut accounts_for_cpi = Vec::with_capacity(29);
         accounts_for_cpi.push(self.config.clone());
         accounts_for_cpi.push(self.vault_state.clone());
+        accounts_for_cpi.push(self.global_config.clone());
         accounts_for_cpi.push(self.token_vault.clone());
         accounts_for_cpi.push(self.base_vault_authority.clone());
         accounts_for_cpi.push(self.user_token_ata.clone());

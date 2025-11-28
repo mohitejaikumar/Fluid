@@ -60,6 +60,8 @@ pub fn calculate_total_asset_balance<'info>(
     
     let kamino_user_shares_ata = InterfaceAccount::<'info, TokenAccount>::try_from(account_iter.next().ok_or(AggregatorError::MissingAccount)?)?;
     
+    skip_accounts(&mut account_iter, 1)?;
+
     // Reserve 1 (7 accounts)
     let reserve_1 = ReserveWithdrawAccounts {
         reserve: account_iter.next().ok_or(AggregatorError::MissingAccount)?.to_account_info(),

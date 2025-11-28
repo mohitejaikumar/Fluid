@@ -70,6 +70,7 @@ describe("contract", () => {
 
   let lookupTableAddress: PublicKey;
   let lookupTableAccount: AddressLookupTableAccount;
+  let globalConfig: PublicKey;
 
   let ctokenVaultReserve1: PublicKey;
   let ctokenVaultReserve2: PublicKey;
@@ -331,6 +332,8 @@ describe("contract", () => {
     configPDA = PublicKey.findProgramAddressSync([Buffer.from("config")], program.programId)[0];
 
     cusdcMint = PublicKey.findProgramAddressSync([Buffer.from("cusdc-mint")], program.programId)[0];
+
+    
     
     signerUSDC = getAssociatedTokenAddressSync(usdcMint, signer.publicKey);
     ownerUSDC = getAssociatedTokenAddressSync(usdcMint, owner.publicKey);
@@ -413,6 +416,8 @@ describe("contract", () => {
     scopePrice = new PublicKey("FarmsPZpWu9i7Kky8tPN37rs2TpmMrAZrC7S7vJa91Hr");
 
     farmVaultAuthority = new PublicKey("45AYN1NotDSbptLmfPrV31nrbZktJ6DLJKBxQbJMBxYg");
+
+    globalConfig = PublicKey.findProgramAddressSync([Buffer.from("global_config")], kaminoVaultProgram)[0];
 
     reserveAccount1 = new PublicKey("Ga4rZytCpq1unD4DbEJ5bkHeUz9g3oh9AAFEi6vSauXp");
     ctokenVaultReserve1 = PublicKey.findProgramAddressSync([Buffer.from("ctoken_vault"), vaultState.toBuffer(), reserveAccount1.toBuffer()], kaminoVaultProgram)[0];
@@ -505,6 +510,7 @@ describe("contract", () => {
       instructionSysvar,
       configState,
       configSharesAta,
+      globalConfig,
 
       reserveAccount1,
       ctokenVaultReserve1,
@@ -595,7 +601,7 @@ describe("contract", () => {
         isWritable: false
       }
    ]
-   // 31 accounts
+   // 32 accounts
    kaminoAccounts = [
      {
        pubkey: vaultState,
@@ -691,6 +697,11 @@ describe("contract", () => {
        pubkey: configSharesAta,
        isSigner: false,
        isWritable: true
+     },
+     {
+       pubkey: globalConfig,
+       isSigner: false,
+       isWritable: false
      },
      {
        pubkey: reserveAccount1,

@@ -6,7 +6,6 @@ use crate::{errors::AggregatorError, states::AggregatorConfig};
 
 
 fn get_deposit_discriminator() -> Vec<u8> {
-    // discriminator = sha256("global:deposit")[0..8]
     vec![242, 35, 198, 137, 82, 225, 242, 182]
 }
 
