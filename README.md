@@ -1,4 +1,4 @@
-# Fluid - DeFi Yield Aggregator
+# DeFi Yield Aggregator
 
 A Solana-based DeFi yield aggregator that optimizes deposits across multiple lending protocols (Juplend and Kamino) to maximize returns for users.
 
